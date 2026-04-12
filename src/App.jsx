@@ -15,11 +15,11 @@ const INITIAL_PLAYERS = [
 ];
 
 const INITIAL_BIRTHDAYS = {
-  jason:    { month: 1, day: 1 },
-  shanda:   { month: 1, day: 1 },
-  lyric:    { month: 1, day: 1 },
-  brayden:  { month: 1, day: 1 },
-  karrigan: { month: 1, day: 1 },
+  jason:    { month: 7, day: 17 },
+  shanda:   { month: 6, day: 16 },
+  lyric:    { month: 11, day: 1 },
+  brayden:  { month: 5, day: 3 },
+  karrigan: { month: 7, day: 25 },
 };
 
 const HALL_OF_FAME_DEFAULT = [
@@ -509,6 +509,103 @@ function AddPlayerModal({ onAdd, onClose, inputStyle }) {
   );
 }
 
+// ─── EDIT PLAYER MODAL ───────────────────────────────────────────────────────
+
+function EditPlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle }) {
+  const [emoji, setEmoji] = useState(player.emoji);
+  const [color, setColor] = useState(player.color);
+  const [bdMonth, setBdMonth] = useState(birthday?.month || 1);
+  const [bdDay, setBdDay] = useState(birthday?.day || 1);
+
+  const numStyle = { width:50, background:"#0d0d16", border:"1px solid #1e293b",
+    borderRadius:8, padding:"8px", color:"#e2e8f0", fontSize:13,
+    fontFamily:"inherit", outline:"none", textAlign:"center" };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)",
+      zIndex:200, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"#0f0f1a",
+        border:"1px solid #1e293b", borderRadius:16, padding:24, width:"100%", maxWidth:420 }}>
+
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <span style={{ color:"#e2e8f0", fontWeight:700, fontSize:16 }}>Edit {player.name}</span>
+          <button onClick={onClose} style={{ background:"none", border:"none",
+            color:"#475569", fontSize:20, cursor:"pointer" }}>✕</button>
+        </div>
+
+        {/* Preview */}
+        <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20,
+          padding:"12px 16px", background:"rgba(255,255,255,0.02)",
+          border:`1px solid ${color}44`, borderRadius:12 }}>
+          <div style={{ width:44, height:44, borderRadius:"50%", background:color+"22",
+            border:`2px solid ${color}`, display:"flex", alignItems:"center",
+            justifyContent:"center", fontSize:22 }}>{emoji}</div>
+          <span style={{ color:color, fontWeight:700, fontSize:16 }}>{player.name}</span>
+        </div>
+
+        {/* Emoji */}
+        <div style={{ marginBottom:16 }}>
+          <label style={{ color:"#64748b", fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>EMOJI</label>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+            {EMOJI_OPTIONS.map(e => (
+              <button key={e} onClick={() => setEmoji(e)} style={{
+                width:36, height:36, borderRadius:8, fontSize:18, cursor:"pointer",
+                background: emoji===e ? "rgba(249,115,22,0.2)" : "rgba(255,255,255,0.03)",
+                border: `1px solid ${emoji===e ? "#f97316" : "#1e293b"}`,
+              }}>{e}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* Color */}
+        <div style={{ marginBottom:16 }}>
+          <label style={{ color:"#64748b", fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>COLOR</label>
+          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
+            {COLOR_OPTIONS.map(c => (
+              <button key={c} onClick={() => setColor(c)} style={{
+                width:28, height:28, borderRadius:"50%", background:c, cursor:"pointer",
+                border: color===c ? "3px solid #fff" : "2px solid transparent",
+                outline: color===c ? `2px solid ${c}` : "none",
+              }} />
+            ))}
+          </div>
+        </div>
+
+        {/* Birthday */}
+        <div style={{ marginBottom:24 }}>
+          <label style={{ color:"#64748b", fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>
+            BIRTHDAY <span style={{ color:"#334155", letterSpacing:0, textTransform:"none", fontSize:10 }}>(for bonus)</span>
+          </label>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <input type="number" min="1" max="12" value={bdMonth}
+              onChange={e => setBdMonth(parseInt(e.target.value)||1)} style={numStyle} />
+            <span style={{ color:"#334155" }}>/</span>
+            <input type="number" min="1" max="31" value={bdDay}
+              onChange={e => setBdDay(parseInt(e.target.value)||1)} style={numStyle} />
+            <span style={{ color:"#475569", fontSize:11 }}>MM / DD</span>
+          </div>
+        </div>
+
+        <button onClick={() => onSave({ emoji, color, birthday: { month: bdMonth, day: bdDay } })}
+          style={{ width:"100%", padding:"13px", marginBottom:10,
+            background:"linear-gradient(135deg,#f97316,#ea580c)", border:"none",
+            borderRadius:12, color:"#fff", fontSize:14, fontWeight:900,
+            letterSpacing:2, cursor:"pointer", fontFamily:"inherit" }}>
+          SAVE CHANGES
+        </button>
+
+        <button onClick={() => {
+          if (window.confirm(`Remove ${player.name}? Their finds stay in history.`)) onRemove();
+        }} style={{ width:"100%", padding:"11px", background:"transparent",
+          border:"1px solid #7f1d1d", borderRadius:12, color:"#ef4444",
+          fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          Remove Player
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── RULES TAB ────────────────────────────────────────────────────────────────
 
 function RulesTab({ hofList }) {
@@ -597,6 +694,8 @@ function RulesTab({ hofList }) {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
+const ADMIN_PIN = "GPJ";
+
 export default function App() {
   const [tab, setTab] = useState("board");
   const [players, setPlayers] = useState(INITIAL_PLAYERS);
@@ -618,6 +717,10 @@ export default function App() {
 
   const [profilePlayer, setProfilePlayer] = useState(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [adminUnlocked, setAdminUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
 
   const [newHof, setNewHof] = useState("");
   const [newHofLabel, setNewHofLabel] = useState("");
@@ -712,6 +815,17 @@ export default function App() {
     setShowAddPlayer(false);
   }
 
+  function handleEditPlayer(playerId, { emoji, color, birthday }) {
+    setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, emoji, color } : p));
+    setBirthdays(prev => ({ ...prev, [playerId]: birthday }));
+    setEditingPlayer(null);
+  }
+
+  function handleRemovePlayer(playerId) {
+    setPlayers(prev => prev.filter(p => p.id !== playerId));
+    setEditingPlayer(null);
+  }
+
   function addHof() {
     if (!newHof.trim()) return;
     setHofList(prev => [...prev, { number: newHof.trim(),
@@ -772,6 +886,16 @@ export default function App() {
         <AddPlayerModal
           onAdd={handleAddPlayer}
           onClose={() => setShowAddPlayer(false)}
+          inputStyle={S.input}
+        />
+      )}
+      {editingPlayer && (
+        <EditPlayerModal
+          player={editingPlayer}
+          birthday={birthdays[editingPlayer.id]}
+          onSave={changes => handleEditPlayer(editingPlayer.id, changes)}
+          onRemove={() => handleRemovePlayer(editingPlayer.id)}
+          onClose={() => setEditingPlayer(null)}
           inputStyle={S.input}
         />
       )}
@@ -1006,111 +1130,148 @@ export default function App() {
         {tab==="admin" && (
           <div>
             <div style={{ color:"#475569", fontSize:11, letterSpacing:3, marginBottom:20 }}>SETTINGS</div>
-            <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-              {[["players","👥 Players"],["hof","🏆 Hall of Fame"],["birthdays","🎂 Birthdays"]].map(([id, label]) => (
-                <button key={id} onClick={() => setAdminSection(id)} style={{
-                  padding:"7px 14px", borderRadius:20,
-                  border:`1px solid ${adminSection===id?"#f97316":"#1e293b"}`,
-                  background: adminSection===id ? "rgba(249,115,22,0.1)" : "transparent",
-                  color: adminSection===id ? "#f97316" : "#475569",
-                  fontSize:12, cursor:"pointer", fontFamily:"inherit",
-                }}>{label}</button>
-              ))}
-            </div>
 
-            {adminSection==="players" && (
-              <div>
-                {players.map(p => (
-                  <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
-                    padding:"10px 14px", borderRadius:10, marginBottom:8,
-                    background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
-                    <PlayerBadge player={p} />
-                    <span style={{ flex:1, color:"#cbd5e1" }}>{p.name}</span>
-                    <span style={{ color:"#334155", fontSize:12 }}>
-                      {submissions.filter(s => s.playerId===p.id).length} finds
-                    </span>
-                  </div>
-                ))}
-                <button onClick={() => setShowAddPlayer(true)} style={{
-                  width:"100%", marginTop:12, padding:"12px",
-                  background:"transparent", border:"1px dashed #1e293b",
-                  borderRadius:10, color:"#475569", fontSize:13,
-                  cursor:"pointer", fontFamily:"inherit",
-                  transition:"all 0.15s"
-                }}
-                  onMouseOver={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
-                  onMouseOut={e => { e.currentTarget.style.borderColor="#1e293b"; e.currentTarget.style.color="#475569"; }}
-                >+ Add Player</button>
+            {/* PIN gate */}
+            {!adminUnlocked ? (
+              <div style={{ textAlign:"center", paddingTop:20 }}>
+                <div style={{ fontSize:32, marginBottom:12 }}>🔒</div>
+                <div style={{ color:"#64748b", fontSize:13, marginBottom:20 }}>Enter admin PIN to continue</div>
+                <input
+                  value={pinInput}
+                  onChange={e => setPinInput(e.target.value.toUpperCase())}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      if (pinInput === ADMIN_PIN) { setAdminUnlocked(true); setPinError(""); setPinInput(""); }
+                      else { setPinError("Incorrect PIN"); setPinInput(""); }
+                    }
+                  }}
+                  placeholder="PIN"
+                  maxLength={10}
+                  style={{ ...S.input, width:120, textAlign:"center", fontSize:18,
+                    letterSpacing:6, marginBottom:12 }}
+                />
+                <br/>
+                <button onClick={() => {
+                  if (pinInput === ADMIN_PIN) { setAdminUnlocked(true); setPinError(""); setPinInput(""); }
+                  else { setPinError("Incorrect PIN"); setPinInput(""); }
+                }} style={{ padding:"10px 28px", background:"linear-gradient(135deg,#f97316,#ea580c)",
+                  border:"none", borderRadius:10, color:"#fff", fontWeight:700,
+                  cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
+                  Unlock
+                </button>
+                {pinError && <div style={{ color:"#ef4444", fontSize:12, marginTop:10 }}>{pinError}</div>}
               </div>
-            )}
+            ) : (
+              <>
+                <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+                  {[["players","👥 Players"],["hof","🏆 Hall of Fame"],["birthdays","🎂 Birthdays"]].map(([id, label]) => (
+                    <button key={id} onClick={() => setAdminSection(id)} style={{
+                      padding:"7px 14px", borderRadius:20,
+                      border:`1px solid ${adminSection===id?"#f97316":"#1e293b"}`,
+                      background: adminSection===id ? "rgba(249,115,22,0.1)" : "transparent",
+                      color: adminSection===id ? "#f97316" : "#475569",
+                      fontSize:12, cursor:"pointer", fontFamily:"inherit",
+                    }}>{label}</button>
+                  ))}
+                </div>
 
-            {adminSection==="hof" && (
-              <div>
-                <div style={{ color:"#64748b", fontSize:11, marginBottom:12 }}>Each earns +40 bonus points</div>
-                {hofList.map((h, i) => (
-                  <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-                    padding:"9px 14px", borderRadius:10, marginBottom:6,
-                    background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
-                    <span style={{ color:"#fbbf24", fontFamily:"'Courier Prime',monospace", letterSpacing:2 }}>{h.number}</span>
-                    <span style={{ color:"#64748b", fontSize:12 }}>{h.label}</span>
+                {adminSection==="players" && (
+                  <div>
+                    {players.map(p => (
+                      <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
+                        padding:"10px 14px", borderRadius:10, marginBottom:8,
+                        background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
+                        <PlayerBadge player={p} />
+                        <span style={{ flex:1, color:"#cbd5e1" }}>{p.name}</span>
+                        <span style={{ color:"#334155", fontSize:12, marginRight:8 }}>
+                          {submissions.filter(s => s.playerId===p.id).length} finds
+                        </span>
+                        <button onClick={() => setEditingPlayer(p)} style={{
+                          padding:"5px 10px", background:"transparent",
+                          border:"1px solid #1e293b", borderRadius:8,
+                          color:"#475569", fontSize:11, cursor:"pointer", fontFamily:"inherit",
+                        }}>Edit</button>
+                      </div>
+                    ))}
+                    <button onClick={() => setShowAddPlayer(true)} style={{
+                      width:"100%", marginTop:12, padding:"12px",
+                      background:"transparent", border:"1px dashed #1e293b",
+                      borderRadius:10, color:"#475569", fontSize:13,
+                      cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s",
+                    }}
+                      onMouseOver={e => { e.currentTarget.style.borderColor="#f97316"; e.currentTarget.style.color="#f97316"; }}
+                      onMouseOut={e => { e.currentTarget.style.borderColor="#1e293b"; e.currentTarget.style.color="#475569"; }}
+                    >+ Add Player</button>
                   </div>
-                ))}
-                <div style={{ marginTop:16, display:"flex", gap:8, flexWrap:"wrap" }}>
-                  <input value={newHof} onChange={e => setNewHof(e.target.value)}
-                    placeholder="Number"
-                    style={{ ...S.input, flex:1, minWidth:90 }} />
-                  <input value={newHofLabel} onChange={e => setNewHofLabel(e.target.value)}
-                    placeholder="Label"
-                    style={{ ...S.input, flex:2, minWidth:120 }} />
-                  <button onClick={addHof} style={S.addBtn}>Add</button>
-                </div>
-              </div>
-            )}
+                )}
 
-            {adminSection==="birthdays" && (
-              <div>
-                <div style={{ color:"#64748b", fontSize:11, marginBottom:4 }}>Birthday bonus (+25 pts) fires only when:</div>
-                <div style={{ color:"#334155", fontSize:11, marginBottom:16, lineHeight:1.7 }}>
-                  1) Today IS that person's birthday<br/>
-                  2) The submission is exactly their MM/DD digits (nothing extra)
-                </div>
-                {players.map(p => {
-                  const bday = birthdays[p.id] || { month:1, day:1 };
-                  const numStyle = { width:44, background:"#0d0d16", border:"1px solid #1e293b",
-                    borderRadius:8, padding:"6px 8px", color:"#e2e8f0",
-                    fontSize:13, fontFamily:"inherit", outline:"none", textAlign:"center" };
-                  return (
-                    <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
-                      padding:"10px 14px", borderRadius:10, marginBottom:8,
-                      background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
-                      <span style={{ fontSize:16 }}>{p.emoji}</span>
-                      <span style={{ flex:1, color:"#cbd5e1", fontSize:13 }}>{p.name}</span>
-                      <input type="number" min="1" max="12" value={bday.month} style={numStyle}
-                        onChange={e => setBirthdays(prev => ({...prev,[p.id]:{...bday,month:parseInt(e.target.value)||1}}))} />
-                      <span style={{ color:"#334155" }}>/</span>
-                      <input type="number" min="1" max="31" value={bday.day} style={numStyle}
-                        onChange={e => setBirthdays(prev => ({...prev,[p.id]:{...bday,day:parseInt(e.target.value)||1}}))} />
+                {adminSection==="hof" && (
+                  <div>
+                    <div style={{ color:"#64748b", fontSize:11, marginBottom:12 }}>Each earns +40 bonus points</div>
+                    {hofList.map((h, i) => (
+                      <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                        padding:"9px 14px", borderRadius:10, marginBottom:6,
+                        background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
+                        <span style={{ color:"#fbbf24", fontFamily:"'Courier Prime',monospace", letterSpacing:2 }}>{h.number}</span>
+                        <span style={{ color:"#64748b", fontSize:12 }}>{h.label}</span>
+                      </div>
+                    ))}
+                    <div style={{ marginTop:16, display:"flex", gap:8, flexWrap:"wrap" }}>
+                      <input value={newHof} onChange={e => setNewHof(e.target.value)}
+                        placeholder="Number" style={{ ...S.input, flex:1, minWidth:90 }} />
+                      <input value={newHofLabel} onChange={e => setNewHofLabel(e.target.value)}
+                        placeholder="Label" style={{ ...S.input, flex:2, minWidth:120 }} />
+                      <button onClick={addHof} style={S.addBtn}>Add</button>
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                  </div>
+                )}
 
-            <div style={{ marginTop:32, borderTop:"1px solid #1e293b", paddingTop:20 }}>
-              <div style={{ color:"#334155", fontSize:11, letterSpacing:2, marginBottom:12 }}>DANGER ZONE</div>
-              <button onClick={async () => {
-                if (window.confirm("Reset ALL scores and submissions? Players and settings stay. Cannot be undone.")) {
-                  const snap = await getDocs(collection(db, "submissions"));
-                  const batch = writeBatch(db);
-                  snap.docs.forEach(d => batch.delete(d.ref));
-                  await batch.commit();
-                }
-              }} style={{ width:"100%", padding:"11px", background:"transparent",
-                border:"1px solid #7f1d1d", borderRadius:10, color:"#ef4444",
-                fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-                Reset All Scores
-              </button>
-            </div>
+                {adminSection==="birthdays" && (
+                  <div>
+                    <div style={{ color:"#64748b", fontSize:11, marginBottom:4 }}>Birthday bonus (+25 pts) fires only when:</div>
+                    <div style={{ color:"#334155", fontSize:11, marginBottom:16, lineHeight:1.7 }}>
+                      1) Today IS that person's birthday<br/>
+                      2) The submission is exactly their MM/DD digits (nothing extra)
+                    </div>
+                    {players.map(p => {
+                      const bday = birthdays[p.id] || { month:1, day:1 };
+                      const numStyle = { width:44, background:"#0d0d16", border:"1px solid #1e293b",
+                        borderRadius:8, padding:"6px 8px", color:"#e2e8f0",
+                        fontSize:13, fontFamily:"inherit", outline:"none", textAlign:"center" };
+                      return (
+                        <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
+                          padding:"10px 14px", borderRadius:10, marginBottom:8,
+                          background:"rgba(255,255,255,0.02)", border:"1px solid #1e293b" }}>
+                          <span style={{ fontSize:16 }}>{p.emoji}</span>
+                          <span style={{ flex:1, color:"#cbd5e1", fontSize:13 }}>{p.name}</span>
+                          <input type="number" min="1" max="12" value={bday.month} style={numStyle}
+                            onChange={e => setBirthdays(prev => ({...prev,[p.id]:{...bday,month:parseInt(e.target.value)||1}}))} />
+                          <span style={{ color:"#334155" }}>/</span>
+                          <input type="number" min="1" max="31" value={bday.day} style={numStyle}
+                            onChange={e => setBirthdays(prev => ({...prev,[p.id]:{...bday,day:parseInt(e.target.value)||1}}))} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div style={{ marginTop:32, borderTop:"1px solid #1e293b", paddingTop:20 }}>
+                  <div style={{ color:"#334155", fontSize:11, letterSpacing:2, marginBottom:12 }}>DANGER ZONE</div>
+                  <button onClick={async () => {
+                    if (window.confirm("Reset ALL scores and submissions? Players and settings stay. Cannot be undone.")) {
+                      const snap = await getDocs(collection(db, "submissions"));
+                      const batch = writeBatch(db);
+                      snap.docs.forEach(d => batch.delete(d.ref));
+                      await batch.commit();
+                    }
+                  }} style={{ width:"100%", padding:"11px", background:"transparent",
+                    border:"1px solid #7f1d1d", borderRadius:10, color:"#ef4444",
+                    fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                    Reset All Scores
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
