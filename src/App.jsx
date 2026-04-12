@@ -49,11 +49,11 @@ const INITIAL_PLAYERS = [
 ];
 
 const INITIAL_BIRTHDAYS = {
-  jason:    { month: 1, day: 1 },
-  shanda:   { month: 1, day: 1 },
-  lyric:    { month: 1, day: 1 },
-  brayden:  { month: 1, day: 1 },
-  karrigan: { month: 1, day: 1 },
+  jason:    { month: 7, day: 17 },
+  shanda:   { month: 6, day: 16 },
+  lyric:    { month: 11, day: 1 },
+  brayden:  { month: 5, day: 3 },
+  karrigan: { month: 7, day: 25 },
 };
 
 const HALL_OF_FAME_DEFAULT = [
@@ -1080,16 +1080,18 @@ export default function App() {
       {/* Header */}
       <div style={{ padding:"24px 20px 14px", borderBottom:`1px solid ${GV.bg2}`,
         background:`linear-gradient(180deg,${GV.bg1} 0%,${GV.bg0} 100%)` }}>
-        <div style={{ display:"flex", alignItems:"baseline", gap:10, justifyContent:"space-between" }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
             <span style={{ fontSize:30, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
             <span style={{ fontSize:30, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
             <span style={{ fontSize:20, marginLeft:4 }}>🎲</span>
           </div>
-          <span style={{ color:GV.bg3, fontSize:10, letterSpacing:1 }}>v{VERSION}</span>
-        </div>
-        <div style={{ color:GV.bg4, fontSize:10, letterSpacing:3, marginTop:2 }}>
-          FAMILY NUMBER HUNT · GRANDPAPPYLABS
+          <button onClick={() => setShowAddPlayer(true)} style={{
+            padding:"8px 16px", background:`${GV.orangeB}22`,
+            border:`1px solid ${GV.orangeB}`, borderRadius:20,
+            color:GV.orangeB, fontSize:12, fontWeight:700,
+            cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+          }}>+ JOIN</button>
         </div>
       </div>
 
@@ -1146,6 +1148,14 @@ export default function App() {
                 No finds yet. Be the first! 🎲
               </div>
             )}
+            <div style={{ marginTop:24, textAlign:"center" }}>
+              <div style={{ color:GV.bg3, fontSize:10, letterSpacing:3 }}>
+                GRANDPAPPYLABS · v{VERSION}
+              </div>
+              <div style={{ color:GV.bg2, fontSize:10, letterSpacing:2, marginTop:3 }}>
+                FAMILY NUMBER HUNT
+              </div>
+            </div>
           </div>
         )}
 
