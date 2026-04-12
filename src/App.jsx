@@ -41,8 +41,8 @@ const GV = {
 const ADMIN_PIN = "GPJ";
 
 const INITIAL_PLAYERS = [
-  { id: "jason",    name: "Jason",    emoji: "👴", color: GV.orangeB },
-  { id: "shanda",   name: "Shanda",   emoji: "👩", color: GV.purpleB },
+  { id: "jason",    name: "Jason",    emoji: "🧙", color: GV.orangeB },
+  { id: "shanda",   name: "Shanda",   emoji: "🧶", color: GV.purpleB },
   { id: "lyric",    name: "Lyric",    emoji: "🎵", color: GV.blueB   },
   { id: "brayden",  name: "Brayden",  emoji: "🧢", color: GV.greenB  },
   { id: "karrigan", name: "Karrigan", emoji: "⭐", color: GV.yellowB },
