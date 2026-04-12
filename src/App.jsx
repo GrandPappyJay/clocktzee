@@ -326,7 +326,7 @@ function ProofImage({ imageData, timestamp, hadImage }) {
 
 // ─── PLAYER PROFILE MODAL ─────────────────────────────────────────────────────
 
-function PlayerProfile({ player, submissions, onClose }) {
+function PlayerProfile({ player, submissions, onClose, onEdit }) {
   const subs = submissions.filter(s => s.playerId === player.id);
   const total = subs.reduce((a, s) => a + s.score, 0);
   const best = subs.length ? Math.max(...subs.map(s => s.score)) : 0;
@@ -350,8 +350,15 @@ function PlayerProfile({ player, submissions, onClose }) {
               <div style={{ fontWeight:900, fontSize:22, color:"#fff" }}>{player.name}</div>
               <div style={{ color:player.color, fontSize:12, marginTop:2 }}>{subs.length} finds total</div>
             </div>
-            <button onClick={onClose} style={{ marginLeft:"auto", background:"none", border:"none",
-              color:"#475569", fontSize:22, cursor:"pointer", padding:4 }}>✕</button>
+            <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
+              <button onClick={onEdit} style={{ background:"transparent",
+                border:"1px solid #1e293b", borderRadius:8, padding:"6px 12px",
+                color:"#475569", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                ✏️ Edit
+              </button>
+              <button onClick={onClose} style={{ background:"none", border:"none",
+                color:"#475569", fontSize:22, cursor:"pointer", padding:4 }}>✕</button>
+            </div>
           </div>
 
           {/* Stats row */}
@@ -587,20 +594,22 @@ function EditPlayerModal({ player, birthday, onSave, onRemove, onClose, inputSty
         </div>
 
         <button onClick={() => onSave({ emoji, color, birthday: { month: bdMonth, day: bdDay } })}
-          style={{ width:"100%", padding:"13px", marginBottom:10,
+          style={{ width:"100%", padding:"13px", marginBottom: onRemove ? 10 : 0,
             background:"linear-gradient(135deg,#f97316,#ea580c)", border:"none",
             borderRadius:12, color:"#fff", fontSize:14, fontWeight:900,
             letterSpacing:2, cursor:"pointer", fontFamily:"inherit" }}>
           SAVE CHANGES
         </button>
 
-        <button onClick={() => {
-          if (window.confirm(`Remove ${player.name}? Their finds stay in history.`)) onRemove();
-        }} style={{ width:"100%", padding:"11px", background:"transparent",
-          border:"1px solid #7f1d1d", borderRadius:12, color:"#ef4444",
-          fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-          Remove Player
-        </button>
+        {onRemove && (
+          <button onClick={() => {
+            if (window.confirm(`Remove ${player.name}? Their finds stay in history.`)) onRemove();
+          }} style={{ width:"100%", padding:"11px", background:"transparent",
+            border:"1px solid #7f1d1d", borderRadius:12, color:"#ef4444",
+            fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            Remove Player
+          </button>
+        )}
       </div>
     </div>
   );
@@ -718,6 +727,7 @@ export default function App() {
   const [profilePlayer, setProfilePlayer] = useState(null);
   const [showAddPlayer, setShowAddPlayer] = useState(false);
   const [editingPlayer, setEditingPlayer] = useState(null);
+  const [selfEditingPlayer, setSelfEditingPlayer] = useState(null);
   const [adminUnlocked, setAdminUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState("");
@@ -763,6 +773,18 @@ export default function App() {
     if (!rawInput || !selPlayer) { setPreview(null); return; }
     setPreview(scoreSubmission(rawInput, category, selPlayer, submissions, birthdays, hofList));
   }, [rawInput, selPlayer, category, submissions]);
+
+  // ── Last visited tracking for new finds banner ──
+  const [lastVisited] = useState(() => {
+    const stored = localStorage.getItem("ctz_last_visited");
+    const ts = stored ? new Date(stored) : null;
+    localStorage.setItem("ctz_last_visited", new Date().toISOString());
+    return ts;
+  });
+
+  const newFindsCount = lastVisited
+    ? submissions.filter(s => new Date(s.timestamp) > lastVisited).length
+    : 0;
 
   async function handleImageChange(e) {
     const file = e.target.files?.[0];
@@ -880,6 +902,17 @@ export default function App() {
           player={profilePlayer}
           submissions={submissions}
           onClose={() => setProfilePlayer(null)}
+          onEdit={() => { setSelfEditingPlayer(profilePlayer); setProfilePlayer(null); }}
+        />
+      )}
+      {selfEditingPlayer && (
+        <EditPlayerModal
+          player={selfEditingPlayer}
+          birthday={birthdays[selfEditingPlayer.id]}
+          onSave={changes => { handleEditPlayer(selfEditingPlayer.id, changes); setSelfEditingPlayer(null); }}
+          onRemove={null}
+          onClose={() => setSelfEditingPlayer(null)}
+          inputStyle={S.input}
         />
       )}
       {showAddPlayer && (
@@ -1078,6 +1111,16 @@ export default function App() {
         {/* ── FEED ── */}
         {tab==="feed" && (
           <div>
+            {newFindsCount > 0 && (
+              <div style={{ background:"rgba(249,115,22,0.1)", border:"1px solid rgba(249,115,22,0.3)",
+                borderRadius:10, padding:"10px 14px", marginBottom:16,
+                display:"flex", alignItems:"center", gap:10 }}>
+                <span style={{ fontSize:16 }}>🆕</span>
+                <span style={{ color:"#f97316", fontSize:13, fontWeight:600 }}>
+                  {newFindsCount} new find{newFindsCount !== 1 ? "s" : ""} since your last visit
+                </span>
+              </div>
+            )}
             <div style={{ color:"#475569", fontSize:11, letterSpacing:3, marginBottom:20 }}>
               RECENT FINDS · {submissions.length} TOTAL
             </div>
