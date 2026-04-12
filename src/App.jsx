@@ -784,6 +784,32 @@ function ChampionsTab({ champions, players }) {
   );
 }
 
+// ─── BIRTHDAY ROW ─────────────────────────────────────────────────────────────
+
+function BirthdayRow({ player, birthday, onUpdate, inputStyle }) {
+  const [bdText, setBdText] = useState(
+    birthday ? `${birthday.month}/${birthday.day}` : ""
+  );
+  return (
+    <div style={{ display:"flex", alignItems:"center", gap:10,
+      padding:"10px 14px", borderRadius:10, marginBottom:8,
+      background:GV.bg, border:`1px solid ${GV.bg2}` }}>
+      <span style={{ fontSize:16 }}>{player.emoji}</span>
+      <span style={{ flex:1, color:GV.fg1, fontSize:13 }}>{player.name}</span>
+      <input
+        value={bdText}
+        onChange={e => {
+          setBdText(e.target.value);
+          const parsed = parseBirthdayText(e.target.value);
+          if (parsed) onUpdate(parsed);
+        }}
+        placeholder="MM/DD"
+        style={{ ...inputStyle, width:80, textAlign:"center", padding:"6px 8px" }}
+      />
+    </div>
+  );
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -1440,27 +1466,15 @@ export default function App() {
                     <div style={{ color:GV.bg3, fontSize:11, marginBottom:16 }}>
                       You can also edit birthdays via the Edit button on each player above.
                     </div>
-                    {players.map(p => {
-                      const bday = birthdays[p.id] || { month:1, day:1 };
-                      const [bdText, setBdText] = useState(`${bday.month}/${bday.day}`);
-                      return (
-                        <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
-                          padding:"10px 14px", borderRadius:10, marginBottom:8,
-                          background:GV.bg, border:`1px solid ${GV.bg2}` }}>
-                          <span style={{ fontSize:16 }}>{p.emoji}</span>
-                          <span style={{ flex:1, color:GV.fg1, fontSize:13 }}>{p.name}</span>
-                          <input value={bdText}
-                            onChange={e => {
-                              setBdText(e.target.value);
-                              const parsed = parseBirthdayText(e.target.value);
-                              if (parsed) setBirthdays(prev => ({...prev,[p.id]:parsed}));
-                            }}
-                            placeholder="MM/DD"
-                            style={{ ...S.input, width:80, textAlign:"center", padding:"6px 8px" }}
-                          />
-                        </div>
-                      );
-                    })}
+                    {players.map(p => (
+                      <BirthdayRow
+                        key={p.id}
+                        player={p}
+                        birthday={birthdays[p.id]}
+                        onUpdate={parsed => setBirthdays(prev => ({ ...prev, [p.id]: parsed }))}
+                        inputStyle={S.input}
+                      />
+                    ))}
                   </div>
                 )}
 
