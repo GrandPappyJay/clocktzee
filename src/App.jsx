@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { db } from "./firebase";
 import {
   collection, doc, getDoc, setDoc, onSnapshot, addDoc,
-  query, orderBy, writeBatch, getDocs, updateDoc,
+  query, orderBy, writeBatch, getDocs, updateDoc, deleteDoc,
 } from "firebase/firestore";
 
 // ─── VERSION ──────────────────────────────────────────────────────────────────
@@ -283,8 +283,11 @@ function timeUntilExpiry(ts) {
 async function fsGet(path, fallback) {
   try {
     const snap = await getDoc(doc(db, ...path.split("/")));
-    return snap.exists() ? snap.data().value : fallback;
-  } catch { return fallback; }
+    if (snap.exists()) return snap.data().value;
+    return fallback; // doc never written — safe to use fallback
+  } catch {
+    return fallback; // network error — safe to use fallback
+  }
 }
 async function fsSet(path, value) {
   try { await setDoc(doc(db, ...path.split("/")), { value }); } catch(e) { console.error(e); }
@@ -850,12 +853,15 @@ export default function App() {
   // ── Load ──
   useEffect(() => {
     (async () => {
-      const p  = await fsGet("settings/players",    INITIAL_PLAYERS);
+      const p  = await fsGet("settings/players",    null);
       const h  = await fsGet("settings/hof",        HALL_OF_FAME_DEFAULT);
       const b  = await fsGet("settings/birthdays",  INITIAL_BIRTHDAYS);
       const pm = await fsGet("settings/periodMode", "monthly");
       const ch = await fsGet("settings/champions",  []);
-      setPlayers(p); setHofList(h); setBirthdays(b);
+      // Only use INITIAL_PLAYERS if Firestore has never been written to (null)
+      // Never fall back to hardcoded list if load succeeds with real data
+      setPlayers(p ?? INITIAL_PLAYERS);
+      setHofList(h); setBirthdays(b);
       setPeriodMode(pm); setChampions(ch);
       setLoaded(true);
     })();
@@ -876,12 +882,18 @@ export default function App() {
     return unsub;
   }, []);
 
-  // ── Persist settings ──
-  useEffect(() => { if (loaded) fsSet("settings/players",    players);    }, [players,    loaded]);
-  useEffect(() => { if (loaded) fsSet("settings/hof",        hofList);    }, [hofList,    loaded]);
-  useEffect(() => { if (loaded) fsSet("settings/birthdays",  birthdays);  }, [birthdays,  loaded]);
-  useEffect(() => { if (loaded) fsSet("settings/periodMode", periodMode); }, [periodMode, loaded]);
-  useEffect(() => { if (loaded) fsSet("settings/champions",  champions);  }, [champions,  loaded]);
+  // ── Persist settings — only on explicit user changes, never on initial load ──
+  const [playersDirty,    setPlayersDirty]    = useState(false);
+  const [hofDirty,        setHofDirty]        = useState(false);
+  const [birthdaysDirty,  setBirthdaysDirty]  = useState(false);
+  const [periodModeDirty, setPeriodModeDirty] = useState(false);
+  const [championsDirty,  setChampionsDirty]  = useState(false);
+
+  useEffect(() => { if (playersDirty)    { fsSet("settings/players",    players);    setPlayersDirty(false);    } }, [players]);
+  useEffect(() => { if (hofDirty)        { fsSet("settings/hof",        hofList);    setHofDirty(false);        } }, [hofList]);
+  useEffect(() => { if (birthdaysDirty)  { fsSet("settings/birthdays",  birthdays);  setBirthdaysDirty(false);  } }, [birthdays]);
+  useEffect(() => { if (periodModeDirty) { fsSet("settings/periodMode", periodMode); setPeriodModeDirty(false); } }, [periodMode]);
+  useEffect(() => { if (championsDirty)  { fsSet("settings/champions",  champions);  setChampionsDirty(false);  } }, [champions]);
 
   // ── Period reset check ──
   useEffect(() => {
@@ -908,6 +920,7 @@ export default function App() {
           periodKey: lastResetKey,
         };
         setChampions(prev => [winnerEntry, ...prev].slice(0, 20));
+        setChampionsDirty(true);
         setPendingWinner({ ...winnerPlayer, total: scores[winnerId],
           periodLabel: getPeriodLabel(lastResetKey, periodMode) });
       }
@@ -969,7 +982,9 @@ export default function App() {
       }
 
       await addDoc(collection(db, "submissions"), {
-        playerId: selPlayer, raw: rawInput.trim(), category: category || null,
+        playerId: selPlayer,
+        playerName: players.find(p => p.id === selPlayer)?.name || selPlayer,
+        raw: rawInput.trim(), category: category || null,
         note: note.trim(), score: score.total, scoreDetail: score,
         hasImage: true, imageData, reactions: {},
         timestamp: new Date().toISOString(),
@@ -987,17 +1002,22 @@ export default function App() {
     const id = name.toLowerCase().replace(/\s+/g,"_") + "_" + Date.now();
     setPlayers(prev => [...prev, { id, name, emoji, color }]);
     setBirthdays(prev => ({ ...prev, [id]: birthday }));
+    setPlayersDirty(true);
+    setBirthdaysDirty(true);
     setShowAddPlayer(false);
   }
 
   function handleEditPlayer(playerId, { emoji, color, birthday }) {
     setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, emoji, color } : p));
     setBirthdays(prev => ({ ...prev, [playerId]: birthday }));
+    setPlayersDirty(true);
+    setBirthdaysDirty(true);
     setEditingPlayer(null); setSelfEditingPlayer(null);
   }
 
   function handleRemovePlayer(playerId) {
     setPlayers(prev => prev.filter(p => p.id !== playerId));
+    setPlayersDirty(true);
     setEditingPlayer(null);
   }
 
@@ -1005,6 +1025,7 @@ export default function App() {
     if (!newHof.trim()) return;
     setHofList(prev => [...prev, { number: newHof.trim(),
       label: newHofLabel.trim() || newHof.trim(), points: 40 }]);
+    setHofDirty(true);
     setNewHof(""); setNewHofLabel("");
   }
 
@@ -1306,7 +1327,7 @@ export default function App() {
               <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>No finds yet!</div>
             )}
             {submissions.slice(0,40).map(s => {
-              const player = players.find(p => p.id===s.playerId) || { name:"?", emoji:"?", color:GV.bg4 };
+              const player = players.find(p => p.id===s.playerId) || { name: s.playerName || s.playerId || "?", emoji:"👤", color:GV.bg4 };
               const dt = new Date(s.timestamp);
               return (
                 <div key={s.id} style={{ ...S.card, borderLeft:`3px solid ${player.color}` }}>
@@ -1318,8 +1339,23 @@ export default function App() {
                         {s.category && <span style={{ color:GV.bg3, fontSize:11, marginLeft:8 }}>{s.category}</span>}
                       </div>
                     </div>
-                    <span style={{ color:GV.orangeB, fontWeight:900, fontSize:22,
-                      fontFamily:"'Courier Prime',monospace" }}>+{s.score}</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ color:GV.orangeB, fontWeight:900, fontSize:22,
+                        fontFamily:"'Courier Prime',monospace" }}>+{s.score}</span>
+                      {adminUnlocked && (
+                        <button onClick={async () => {
+                          if (window.confirm("Delete this find? This cannot be undone.")) {
+                            try {
+                              await deleteDoc(doc(db, "submissions", s.id));
+                            } catch(e) { console.error(e); }
+                          }
+                        }} style={{ background:"transparent", border:`1px solid ${GV.red}`,
+                          borderRadius:6, padding:"3px 7px", color:GV.redB,
+                          fontSize:11, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
+                          ✕
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div style={{ marginTop:8, fontFamily:"'Courier Prime',monospace",
                     fontSize:22, color:GV.fg, letterSpacing:3 }}>{s.raw}</div>
@@ -1384,7 +1420,7 @@ export default function App() {
                 <div style={{ marginBottom:20, padding:"14px 16px", background:GV.bg1,
                   border:`1px solid ${GV.bg2}`, borderRadius:12 }}>
                   <label style={{ ...S.label, marginBottom:10 }}>RESET PERIOD</label>
-                  <select value={periodMode} onChange={e => setPeriodMode(e.target.value)}
+                  <select value={periodMode} onChange={e => { setPeriodMode(e.target.value); setPeriodModeDirty(true); }}
                     style={{ ...S.input, width:"100%", cursor:"pointer", marginBottom:8 }}>
                     <option value="monthly">Monthly (resets 1st of every month)</option>
                     <option value="quarterly">Quarterly (resets Jan/Apr/Jul/Oct 1st)</option>
@@ -1395,7 +1431,7 @@ export default function App() {
                 </div>
 
                 <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-                  {[["players","👥 Players"],["hof","🏆 Hall of Fame"],["birthdays","🎂 Birthdays"]].map(([id,label]) => (
+                  {[["players","👥 Players"],["hof","🏆 Hall of Fame"]].map(([id,label]) => (
                     <button key={id} onClick={() => setAdminSection(id)} style={{
                       padding:"7px 14px", borderRadius:20,
                       border:`1px solid ${adminSection===id ? GV.orangeB : GV.bg2}`,
@@ -1453,28 +1489,6 @@ export default function App() {
                         placeholder="Label" style={{ ...S.input, flex:2, minWidth:120 }} />
                       <button onClick={addHof} style={S.addBtn}>Add</button>
                     </div>
-                  </div>
-                )}
-
-                {adminSection==="birthdays" && (
-                  <div>
-                    <div style={{ color:GV.fg3, fontSize:11, marginBottom:4 }}>Birthday bonus (+25 pts) fires only when:</div>
-                    <div style={{ color:GV.bg3, fontSize:11, marginBottom:16, lineHeight:1.7 }}>
-                      1) Today IS that person's birthday<br/>
-                      2) The submission is exactly their MM/DD digits (nothing extra)
-                    </div>
-                    <div style={{ color:GV.bg3, fontSize:11, marginBottom:16 }}>
-                      You can also edit birthdays via the Edit button on each player above.
-                    </div>
-                    {players.map(p => (
-                      <BirthdayRow
-                        key={p.id}
-                        player={p}
-                        birthday={birthdays[p.id]}
-                        onUpdate={parsed => setBirthdays(prev => ({ ...prev, [p.id]: parsed }))}
-                        inputStyle={S.input}
-                      />
-                    ))}
                   </div>
                 )}
 
