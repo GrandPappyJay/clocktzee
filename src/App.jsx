@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { db } from "./firebase";
 import {
   collection, doc, getDoc, setDoc, onSnapshot, addDoc,
@@ -6,55 +6,31 @@ import {
 } from "firebase/firestore";
 
 // ─── VERSION ──────────────────────────────────────────────────────────────────
-const VERSION = "1.4.0";
+const VERSION = "1.5.0";
 
-// ─── GRUVBOX PALETTE ──────────────────────────────────────────────────────────
-const GV = {
-  bg:      "#282828",
-  bg0:     "#1d2021",
-  bg1:     "#3c3836",
-  bg2:     "#504945",
-  bg3:     "#665c54",
-  bg4:     "#7c6f64",
-  fg:      "#ebdbb2",
-  fg1:     "#d5c4a1",
-  fg2:     "#bdae93",
-  fg3:     "#a89984",
-  red:     "#cc241d",
-  redB:    "#fb4934",
-  green:   "#98971a",
-  greenB:  "#b8bb26",
-  yellow:  "#d79921",
-  yellowB: "#fabd2f",
-  blue:    "#458588",
-  blueB:   "#83a598",
-  purple:  "#b16286",
-  purpleB: "#d3869b",
-  aqua:    "#689d6a",
-  aquaB:   "#8ec07c",
-  orange:  "#d65d0e",
-  orangeB: "#fe8019",
+// ─── GRUVBOX PALETTES ─────────────────────────────────────────────────────────
+const GV_DARK = {
+  bg:      "#282828", bg0:     "#1d2021", bg1:     "#3c3836", bg2:     "#504945",
+  bg3:     "#665c54", bg4:     "#7c6f64", fg:      "#ebdbb2", fg1:     "#d5c4a1",
+  fg2:     "#bdae93", fg3:     "#a89984", red:     "#cc241d", redB:    "#fb4934",
+  green:   "#98971a", greenB:  "#b8bb26", yellow:  "#d79921", yellowB: "#fabd2f",
+  blue:    "#458588", blueB:   "#83a598", purple:  "#b16286", purpleB: "#d3869b",
+  aqua:    "#689d6a", aquaB:   "#8ec07c", orange:  "#d65d0e", orangeB: "#fe8019",
 };
+
+const GV_LIGHT = {
+  bg:      "#fbf1c7", bg0:     "#f9f5d7", bg1:     "#ebdbb2", bg2:     "#d5c4a1",
+  bg3:     "#bdae93", bg4:     "#a89984", fg:      "#3c3836", fg1:     "#504945",
+  fg2:     "#665c54", fg3:     "#7c6f64", red:     "#cc241d", redB:    "#9d0006",
+  green:   "#98971a", greenB:  "#79740e", yellow:  "#d79921", yellowB: "#b57614",
+  blue:    "#458588", blueB:   "#076678", purple:  "#b16286", purpleB: "#8f3f71",
+  aqua:    "#689d6a", aquaB:   "#427b58", orange:  "#d65d0e", orangeB: "#af3a03",
+};
+
+// ─── THEME CONTEXT ────────────────────────────────────────────────────────────
+const ThemeContext = createContext(GV_DARK);
 
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
-
-const ADMIN_PIN = "GPJ";
-
-const INITIAL_PLAYERS = [
-  { id: "jason",    name: "Jason",    emoji: "🧙", color: GV.orangeB },
-  { id: "shanda",   name: "Shanda",   emoji: "🧶", color: GV.purpleB },
-  { id: "lyric",    name: "Lyric",    emoji: "🎵", color: GV.blueB   },
-  { id: "brayden",  name: "Brayden",  emoji: "🧢", color: GV.greenB  },
-  { id: "karrigan", name: "Karrigan", emoji: "⭐", color: GV.yellowB },
-];
-
-const INITIAL_BIRTHDAYS = {
-  jason:    { month: 7, day: 17 },
-  shanda:   { month: 6, day: 16 },
-  lyric:    { month: 11, day: 1 },
-  brayden:  { month: 5, day: 3 },
-  karrigan: { month: 7, day: 25 },
-};
 
 const HALL_OF_FAME_DEFAULT = [
   { number: "420",  label: "420 🌿",            points: 40 },
@@ -84,9 +60,9 @@ const EMOJI_OPTIONS = [
 ];
 
 const COLOR_OPTIONS = [
-  GV.orangeB, GV.purpleB, GV.blueB,   GV.greenB,  GV.yellowB,
-  GV.redB,    GV.aquaB,   GV.orange,   GV.purple,  GV.blue,
-  GV.green,   GV.yellow,  GV.fg,       GV.fg2,     GV.aqua,
+  GV_DARK.orangeB, GV_DARK.purpleB, GV_DARK.blueB,   GV_DARK.greenB,  GV_DARK.yellowB,
+  GV_DARK.redB,    GV_DARK.aquaB,   GV_DARK.orange,   GV_DARK.purple,  GV_DARK.blue,
+  GV_DARK.green,   GV_DARK.yellow,  GV_DARK.fg,       GV_DARK.fg2,     GV_DARK.aqua,
 ];
 
 const REACTIONS = ["🔥","😂","🤯","👀","💯"];
@@ -160,7 +136,7 @@ function checkBirthday(digits, birthdays) {
   const todayM = today.getMonth() + 1;
   const todayD = today.getDate();
   for (const [pid, bday] of Object.entries(birthdays)) {
-    if (bday.month !== todayM || bday.day !== todayD) continue;
+    if (!bday || bday.month !== todayM || bday.day !== todayD) continue;
     const mm = String(bday.month).padStart(2,"0");
     const dd = String(bday.day).padStart(2,"0");
     const m  = String(bday.month);
@@ -232,11 +208,11 @@ function scoreSubmission(raw, category, playerId, submissions, birthdays, hofLis
   const bday = checkBirthday(digits, birthdays);
   if (bday) { bonuses.push({ label: "🎂 Birthday Find!", points: 25 }); total += 25; }
 
-  if (isFirstOfDay(submissions, playerId)) {
+  if (base.points > 0 && isFirstOfDay(submissions, playerId)) {
     bonuses.push({ label: "🌅 First of the Day", points: 5 }); total += 5;
   }
 
-  if (!submissions.some(s => extractDigits(s.raw) === digits)) {
+  if (base.points > 0 && !submissions.some(s => extractDigits(s.raw) === digits)) {
     bonuses.push({ label: "🆕 Rare Find (first ever!)", points: 10 }); total += 10;
   }
 
@@ -284,9 +260,9 @@ async function fsGet(path, fallback) {
   try {
     const snap = await getDoc(doc(db, ...path.split("/")));
     if (snap.exists()) return snap.data().value;
-    return fallback; // doc never written — safe to use fallback
+    return fallback;
   } catch {
-    return fallback; // network error — safe to use fallback
+    return fallback;
   }
 }
 async function fsSet(path, value) {
@@ -294,7 +270,6 @@ async function fsSet(path, value) {
 }
 
 // ─── BIRTHDAY INPUT HELPER ────────────────────────────────────────────────────
-// Parse "MM/DD" or "M/D" text into { month, day }
 function parseBirthdayText(text) {
   const parts = text.replace(/[^0-9/]/g,"").split("/");
   if (parts.length === 2) {
@@ -307,6 +282,7 @@ function parseBirthdayText(text) {
 
 // ─── CONFETTI ─────────────────────────────────────────────────────────────────
 function Confetti({ active }) {
+  const GV = useContext(ThemeContext);
   if (!active) return null;
   const pieces = Array.from({ length: 30 }, (_, i) => ({
     id: i,
@@ -338,6 +314,7 @@ function Confetti({ active }) {
 // ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
 
 function ScorePreview({ score }) {
+  const GV = useContext(ThemeContext);
   if (!score) return null;
   return (
     <div style={{ background:`${GV.bg1}`, border:`1px solid ${GV.orangeB}55`,
@@ -365,6 +342,7 @@ function ScorePreview({ score }) {
 }
 
 function PlayerBadge({ player, size="sm" }) {
+  const GV = useContext(ThemeContext);
   const sz = size === "lg" ? 40 : 28;
   return (
     <div style={{ width:sz, height:sz, borderRadius:"50%", background:player.color+"33",
@@ -376,6 +354,7 @@ function PlayerBadge({ player, size="sm" }) {
 }
 
 function ProofImage({ imageData, timestamp, hadImage }) {
+  const GV = useContext(ThemeContext);
   const [open, setOpen] = useState(false);
   const expired = isImageExpired(timestamp);
   if (!hadImage) return null;
@@ -405,6 +384,7 @@ function ProofImage({ imageData, timestamp, hadImage }) {
 }
 
 function ReactionBar({ submissionId, reactions = {} }) {
+  const GV = useContext(ThemeContext);
   const [local, setLocal] = useState(reactions);
 
   async function handleReact(emoji) {
@@ -441,6 +421,7 @@ function ReactionBar({ submissionId, reactions = {} }) {
 // ─── WINNER BANNER ────────────────────────────────────────────────────────────
 
 function WinnerBanner({ winner, periodLabel, onDismiss }) {
+  const GV = useContext(ThemeContext);
   if (!winner) return null;
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.88)",
@@ -469,6 +450,7 @@ function WinnerBanner({ winner, periodLabel, onDismiss }) {
 // ─── PLAYER PROFILE ───────────────────────────────────────────────────────────
 
 function PlayerProfile({ player, submissions, onClose, onEdit }) {
+  const GV = useContext(ThemeContext);
   const subs = submissions.filter(s => s.playerId === player.id);
   const total = subs.reduce((a,s) => a+s.score, 0);
   const best  = subs.length ? Math.max(...subs.map(s => s.score)) : 0;
@@ -491,9 +473,11 @@ function PlayerProfile({ player, submissions, onClose, onEdit }) {
               <div style={{ color:player.color, fontSize:12, marginTop:2 }}>{subs.length} finds total</div>
             </div>
             <div style={{ marginLeft:"auto", display:"flex", gap:8, alignItems:"center" }}>
-              <button onClick={onEdit} style={{ background:"transparent",
-                border:`1px solid ${GV.bg2}`, borderRadius:8, padding:"6px 12px",
-                color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>✏️ Edit</button>
+              {onEdit && (
+                <button onClick={onEdit} style={{ background:"transparent",
+                  border:`1px solid ${GV.bg2}`, borderRadius:8, padding:"6px 12px",
+                  color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>✏️ Edit</button>
+              )}
               <button onClick={onClose} style={{ background:"none", border:"none",
                 color:GV.fg3, fontSize:22, cursor:"pointer", padding:4 }}>✕</button>
             </div>
@@ -547,10 +531,11 @@ function PlayerProfile({ player, submissions, onClose, onEdit }) {
 // ─── ADD / EDIT PLAYER MODAL ──────────────────────────────────────────────────
 
 function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, isEdit }) {
-  const [name,     setName]     = useState(player?.name || "");
-  const [emoji,    setEmoji]    = useState(player?.emoji || EMOJI_OPTIONS[0]);
-  const [color,    setColor]    = useState(player?.color || COLOR_OPTIONS[0]);
-  const [bdText,   setBdText]   = useState(
+  const GV = useContext(ThemeContext);
+  const [name,   setName]   = useState(player?.name || "");
+  const [emoji,  setEmoji]  = useState(player?.emoji || EMOJI_OPTIONS[0]);
+  const [color,  setColor]  = useState(player?.color || COLOR_OPTIONS[0]);
+  const [bdText, setBdText] = useState(
     birthday ? `${birthday.month}/${birthday.day}` : ""
   );
 
@@ -575,7 +560,6 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
             color:GV.fg3, fontSize:20, cursor:"pointer" }}>✕</button>
         </div>
 
-        {/* Preview */}
         <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20,
           padding:"12px 16px", background:GV.bg,
           border:`1px solid ${color}44`, borderRadius:12 }}>
@@ -585,7 +569,6 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
           <span style={{ color:color, fontWeight:700, fontSize:16 }}>{name || player?.name || "Player Name"}</span>
         </div>
 
-        {/* Name — only for adding */}
         {!isEdit && (
           <div style={{ marginBottom:16 }}>
             <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>NAME</label>
@@ -595,7 +578,6 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
           </div>
         )}
 
-        {/* Emoji */}
         <div style={{ marginBottom:16 }}>
           <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>EMOJI</label>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
@@ -609,7 +591,6 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
           </div>
         </div>
 
-        {/* Color */}
         <div style={{ marginBottom:16 }}>
           <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>COLOR</label>
           <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
@@ -623,7 +604,6 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
           </div>
         </div>
 
-        {/* Birthday — text input */}
         <div style={{ marginBottom:24 }}>
           <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>
             BIRTHDAY <span style={{ color:GV.bg3, letterSpacing:0, textTransform:"none", fontSize:10 }}>(MM/DD — for bonus)</span>
@@ -661,10 +641,11 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
 // ─── RULES TAB ────────────────────────────────────────────────────────────────
 
 function RulesTab({ hofList }) {
+  const GV = useContext(ThemeContext);
   const baseScores = [
     { name:"Five of a Kind 🎰", pts:100, example:"1:11:11", desc:"All digits the same" },
     { name:"Straight 📈",       pts:80,  example:"1:23:45", desc:"4 or 5 sequential digits (asc or desc)" },
-    { name:"Four of a Kind 🔥", pts:60,  example:"11:12",   desc:"Four matching digits" },
+    { name:"Four of a Kind 🔥", pts:60,  example:"11:11",   desc:"Four matching digits" },
     { name:"Full House 🏠",     pts:50,  example:"11:22:2", desc:"Three of one + two of another" },
     { name:"Small Straight 📉", pts:40,  example:"1:23",    desc:"3 sequential digits (asc or desc)" },
     { name:"Three of a Kind ✨",pts:30,  example:"2:22",    desc:"Three matching digits" },
@@ -672,9 +653,9 @@ function RulesTab({ hofList }) {
     { name:"No Pattern",        pts:0,   example:"1:37",    desc:"No matches or runs" },
   ];
   const bonuses = [
-    { label:"🎂 Birthday Find",   pts:"+25", desc:"Today is someone's birthday and submission is exactly their MM/DD" },
+    { label:"🎂 Birthday Find",   pts:"+25", desc:"Today is someone's birthday and submission matches their MM/DD — only fires on the actual birthday" },
     { label:"🏆 Hall of Fame",     pts:"+40", desc:"Submission contains a recognized funny/famous number" },
-    { label:"🌅 First of the Day", pts:"+5",  desc:"Your first submission of the calendar day" },
+    { label:"🌅 First of the Day", pts:"+5",  desc:"Your first qualifying submission of the calendar day" },
     { label:"🆕 Rare Find",        pts:"+10", desc:"This digit pattern has never been submitted by anyone before" },
     { label:"🔥 5-Day Streak",     pts:"+25", desc:"You've submitted at least one find on each of the last 5 consecutive days" },
   ];
@@ -747,6 +728,7 @@ function RulesTab({ hofList }) {
 // ─── HALL OF CHAMPIONS TAB ────────────────────────────────────────────────────
 
 function ChampionsTab({ champions, players }) {
+  const GV = useContext(ThemeContext);
   if (champions.length === 0) {
     return (
       <div>
@@ -762,7 +744,7 @@ function ChampionsTab({ champions, players }) {
       <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>HALL OF CHAMPIONS</div>
       {champions.map((c, i) => {
         const player = players.find(p => p.id === c.playerId) ||
-          { name: c.playerName || "?", emoji: "🏆", color: GV.yellowB };
+          { name: c.playerName || "?", emoji: "🏆", color: GV_DARK.yellowB };
         return (
           <div key={i} style={{ display:"flex", alignItems:"center", gap:12,
             background: i===0 ? `${GV.yellowB}11` : GV.bg1,
@@ -787,28 +769,111 @@ function ChampionsTab({ champions, players }) {
   );
 }
 
-// ─── BIRTHDAY ROW ─────────────────────────────────────────────────────────────
+// ─── PLAYER SELECT SCREEN ─────────────────────────────────────────────────────
 
-function BirthdayRow({ player, birthday, onUpdate, inputStyle }) {
-  const [bdText, setBdText] = useState(
-    birthday ? `${birthday.month}/${birthday.day}` : ""
-  );
+function PlayerSelectScreen({ players, onSelect, onAddPlayer }) {
+  const GV = useContext(ThemeContext);
   return (
-    <div style={{ display:"flex", alignItems:"center", gap:10,
-      padding:"10px 14px", borderRadius:10, marginBottom:8,
-      background:GV.bg, border:`1px solid ${GV.bg2}` }}>
-      <span style={{ fontSize:16 }}>{player.emoji}</span>
-      <span style={{ flex:1, color:GV.fg1, fontSize:13 }}>{player.name}</span>
-      <input
-        value={bdText}
-        onChange={e => {
-          setBdText(e.target.value);
-          const parsed = parseBirthdayText(e.target.value);
-          if (parsed) onUpdate(parsed);
-        }}
-        placeholder="MM/DD"
-        style={{ ...inputStyle, width:80, textAlign:"center", padding:"6px 8px" }}
-      />
+    <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", padding:"24px 16px",
+      fontFamily:"'Courier Prime',monospace" }}>
+      <div style={{ marginBottom:32, textAlign:"center" }}>
+        <div style={{ display:"flex", alignItems:"baseline", gap:10, justifyContent:"center", marginBottom:10 }}>
+          <span style={{ fontSize:34, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
+          <span style={{ fontSize:34, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
+          <span style={{ fontSize:24, marginLeft:4 }}>🎲</span>
+        </div>
+        <div style={{ color:GV.fg3, fontSize:12, letterSpacing:3 }}>WHO ARE YOU?</div>
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, width:"100%", maxWidth:400 }}>
+        {players.map(p => (
+          <button key={p.id} onClick={() => onSelect(p)} style={{
+            background:GV.bg1, border:`2px solid ${p.color}44`,
+            borderRadius:16, padding:"20px 16px", cursor:"pointer",
+            display:"flex", flexDirection:"column", alignItems:"center", gap:10,
+            fontFamily:"inherit", transition:"all 0.15s",
+          }}
+            onMouseOver={e => e.currentTarget.style.borderColor = p.color}
+            onMouseOut={e => e.currentTarget.style.borderColor = p.color+"44"}
+          >
+            <div style={{ width:52, height:52, borderRadius:"50%", background:p.color+"33",
+              border:`2px solid ${p.color}`, display:"flex", alignItems:"center",
+              justifyContent:"center", fontSize:26 }}>{p.emoji}</div>
+            <span style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>{p.name}</span>
+          </button>
+        ))}
+      </div>
+      <button onClick={onAddPlayer} style={{
+        marginTop:24, padding:"10px 24px", background:"transparent",
+        border:`1px dashed ${GV.bg3}`, borderRadius:20, color:GV.fg3,
+        fontSize:12, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+        transition:"all 0.15s",
+      }}
+        onMouseOver={e => { e.currentTarget.style.borderColor=GV.orangeB; e.currentTarget.style.color=GV.orangeB; }}
+        onMouseOut={e => { e.currentTarget.style.borderColor=GV.bg3; e.currentTarget.style.color=GV.fg3; }}
+      >+ New Player</button>
+    </div>
+  );
+}
+
+// ─── PROFILE SHEET ────────────────────────────────────────────────────────────
+
+function ProfileSheet({ player, submissions, onClose, onEdit, onLogout, onThemeToggle }) {
+  const GV = useContext(ThemeContext);
+  const subs = submissions.filter(s => s.playerId === player.id);
+  const total = subs.reduce((a,s) => a+s.score, 0);
+  const best  = subs.length ? Math.max(...subs.map(s => s.score)) : 0;
+  const rare  = subs.filter(s => s.scoreDetail?.bonuses?.some(b => b.label.includes("Rare")));
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.7)",
+      zIndex:200, display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:GV.bg1, border:`1px solid ${player.color}55`,
+        borderRadius:"16px 16px 0 0", width:"100%", maxWidth:480,
+        padding:"24px 20px 40px",
+      }}>
+        <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:20 }}>
+          <div style={{ width:52, height:52, borderRadius:"50%", background:player.color+"33",
+            border:`3px solid ${player.color}`, display:"flex", alignItems:"center",
+            justifyContent:"center", fontSize:26 }}>{player.emoji}</div>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:900, fontSize:20, color:GV.fg }}>{player.name}</div>
+            <div style={{ color:player.color, fontSize:12, marginTop:2 }}>{subs.length} finds total</div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none",
+            color:GV.fg3, fontSize:22, cursor:"pointer", padding:4 }}>✕</button>
+        </div>
+
+        <div style={{ display:"flex", gap:10, marginBottom:20 }}>
+          {[["TOTAL",total],["BEST",`+${best}`],["RARE",rare.length]].map(([label,val]) => (
+            <div key={label} style={{ flex:1, background:"rgba(0,0,0,0.2)", borderRadius:10,
+              padding:"10px 12px", textAlign:"center" }}>
+              <div style={{ color:player.color, fontWeight:900, fontSize:20,
+                fontFamily:"'Courier Prime',monospace" }}>{val}</div>
+              <div style={{ color:GV.fg3, fontSize:9, letterSpacing:1, marginTop:2 }}>{label}</div>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          <button onClick={onEdit} style={{ padding:"12px", background:"transparent",
+            border:`1px solid ${GV.bg2}`, borderRadius:12, color:GV.fg,
+            fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            ✏️ Edit Profile
+          </button>
+          <button onClick={onThemeToggle} style={{ padding:"12px", background:"transparent",
+            border:`1px solid ${GV.bg2}`, borderRadius:12, color:GV.fg,
+            fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            {player.theme === "light" ? "🌙 Switch to Dark Mode" : "☀️ Switch to Light Mode"}
+          </button>
+          <button onClick={onLogout} style={{ padding:"12px", background:"transparent",
+            border:`1px solid ${GV.red}`, borderRadius:12, color:GV.redB,
+            fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            Switch Player
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -816,53 +881,74 @@ function BirthdayRow({ player, birthday, onUpdate, inputStyle }) {
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [tab, setTab] = useState("board");
-  const [players,     setPlayers]     = useState(INITIAL_PLAYERS);
-  const [submissions, setSubmissions] = useState([]);
-  const [hofList,     setHofList]     = useState(HALL_OF_FAME_DEFAULT);
-  const [birthdays,   setBirthdays]   = useState(INITIAL_BIRTHDAYS);
-  const [periodMode,  setPeriodMode]  = useState("monthly"); // "monthly" | "quarterly"
-  const [champions,   setChampions]   = useState([]);
-  const [loaded,      setLoaded]      = useState(false);
+  const [tab,          setTab]          = useState("board");
+  const [players,      setPlayers]      = useState([]);
+  const [submissions,  setSubmissions]  = useState([]);
+  const [hofList,      setHofList]      = useState(HALL_OF_FAME_DEFAULT);
+  const [periodMode,   setPeriodMode]   = useState("monthly");
+  const [champions,    setChampions]    = useState([]);
+  const [loaded,       setLoaded]       = useState(false);
+  const [playersLoaded,setPlayersLoaded]= useState(false);
 
-  const [selPlayer,      setSelPlayer]      = useState("");
-  const [rawInput,       setRawInput]       = useState("");
-  const [category,       setCategory]       = useState("");
-  const [note,           setNote]           = useState("");
-  const [imageFile,      setImageFile]      = useState(null);
-  const [imagePreviewUrl,setImagePreviewUrl]= useState(null);
-  const [preview,        setPreview]        = useState(null);
-  const [submitError,    setSubmitError]    = useState("");
-  const [submitting,     setSubmitting]     = useState(false);
-  const [showConfetti,   setShowConfetti]   = useState(false);
+  const [currentPlayer,       setCurrentPlayer]       = useState(null);
+  const [showProfileSheet,    setShowProfileSheet]     = useState(false);
+  const [editingCurrentPlayer,setEditingCurrentPlayer] = useState(false);
+
+  const [rawInput,        setRawInput]        = useState("");
+  const [category,        setCategory]        = useState("");
+  const [note,            setNote]            = useState("");
+  const [imageFile,       setImageFile]       = useState(null);
+  const [imagePreviewUrl, setImagePreviewUrl] = useState(null);
+  const [preview,         setPreview]         = useState(null);
+  const [submitError,     setSubmitError]     = useState("");
+  const [submitting,      setSubmitting]      = useState(false);
+  const [showConfetti,    setShowConfetti]    = useState(false);
   const fileInputRef = useRef();
 
-  const [profilePlayer,    setProfilePlayer]    = useState(null);
-  const [showAddPlayer,    setShowAddPlayer]     = useState(false);
-  const [editingPlayer,    setEditingPlayer]     = useState(null);
-  const [selfEditingPlayer,setSelfEditingPlayer] = useState(null);
-  const [pendingWinner,    setPendingWinner]     = useState(null);
-  const [adminUnlocked,    setAdminUnlocked]     = useState(false);
-  const [pinInput,         setPinInput]          = useState("");
-  const [pinError,         setPinError]          = useState("");
+  const [profilePlayer, setProfilePlayer] = useState(null);
+  const [showAddPlayer, setShowAddPlayer] = useState(false);
+  const [editingPlayer, setEditingPlayer] = useState(null);
+  const [pendingWinner, setPendingWinner] = useState(null);
 
-  const [newHof,      setNewHof]      = useState("");
-  const [newHofLabel, setNewHofLabel] = useState("");
-  const [adminSection,setAdminSection]= useState("players");
+  const [newHof,       setNewHof]       = useState("");
+  const [newHofLabel,  setNewHofLabel]  = useState("");
+  const [adminSection, setAdminSection] = useState("players");
 
-  // ── Load ──
+  const GV = currentPlayer?.theme === "light" ? GV_LIGHT : GV_DARK;
+
+  // ── Load players via onSnapshot ──
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "players"), snap => {
+      setPlayers(snap.docs.map(d => d.data()));
+      setPlayersLoaded(true);
+    });
+    return unsub;
+  }, []);
+
+  // ── Keep currentPlayer in sync with live player data ──
+  useEffect(() => {
+    if (!currentPlayer) return;
+    const updated = players.find(p => p.id === currentPlayer.id);
+    if (updated) setCurrentPlayer(updated);
+  }, [players]);
+
+  // ── Restore session from localStorage once players are available ──
+  useEffect(() => {
+    if (!playersLoaded || currentPlayer) return;
+    const savedId = localStorage.getItem("ctz_player_id");
+    if (savedId) {
+      const found = players.find(p => p.id === savedId);
+      if (found) setCurrentPlayer(found);
+    }
+  }, [playersLoaded]);
+
+  // ── Load settings ──
   useEffect(() => {
     (async () => {
-      const p  = await fsGet("settings/players",    null);
       const h  = await fsGet("settings/hof",        HALL_OF_FAME_DEFAULT);
-      const b  = await fsGet("settings/birthdays",  INITIAL_BIRTHDAYS);
       const pm = await fsGet("settings/periodMode", "monthly");
       const ch = await fsGet("settings/champions",  []);
-      // Only use INITIAL_PLAYERS if Firestore has never been written to (null)
-      // Never fall back to hardcoded list if load succeeds with real data
-      setPlayers(p ?? INITIAL_PLAYERS);
-      setHofList(h); setBirthdays(b);
-      setPeriodMode(pm); setChampions(ch);
+      setHofList(h); setPeriodMode(pm); setChampions(ch);
       setLoaded(true);
     })();
   }, []);
@@ -882,18 +968,19 @@ export default function App() {
     return unsub;
   }, []);
 
-  // ── Persist settings — only on explicit user changes, never on initial load ──
-  const [playersDirty,    setPlayersDirty]    = useState(false);
+  // ── Persist settings ──
   const [hofDirty,        setHofDirty]        = useState(false);
-  const [birthdaysDirty,  setBirthdaysDirty]  = useState(false);
   const [periodModeDirty, setPeriodModeDirty] = useState(false);
   const [championsDirty,  setChampionsDirty]  = useState(false);
 
-  useEffect(() => { if (playersDirty)    { fsSet("settings/players",    players);    setPlayersDirty(false);    } }, [players]);
   useEffect(() => { if (hofDirty)        { fsSet("settings/hof",        hofList);    setHofDirty(false);        } }, [hofList]);
-  useEffect(() => { if (birthdaysDirty)  { fsSet("settings/birthdays",  birthdays);  setBirthdaysDirty(false);  } }, [birthdays]);
   useEffect(() => { if (periodModeDirty) { fsSet("settings/periodMode", periodMode); setPeriodModeDirty(false); } }, [periodMode]);
   useEffect(() => { if (championsDirty)  { fsSet("settings/champions",  champions);  setChampionsDirty(false);  } }, [champions]);
+
+  // ── Birthdays derived from player docs ──
+  const birthdays = Object.fromEntries(
+    players.filter(p => p.birthday).map(p => [p.id, p.birthday])
+  );
 
   // ── Period reset check ──
   useEffect(() => {
@@ -901,7 +988,6 @@ export default function App() {
     const currentKey = getPeriodKey(new Date(), periodMode);
     const lastResetKey = localStorage.getItem("ctz_last_period") || currentKey;
     if (lastResetKey !== currentKey) {
-      // New period — find winner of last period
       const lastSubs = submissions.filter(s => {
         const sk = getPeriodKey(new Date(s.timestamp), periodMode);
         return sk === lastResetKey;
@@ -911,7 +997,7 @@ export default function App() {
         lastSubs.forEach(s => { scores[s.playerId] = (scores[s.playerId] || 0) + s.score; });
         const winnerId = Object.entries(scores).sort((a,b) => b[1]-a[1])[0][0];
         const winnerPlayer = players.find(p => p.id === winnerId) ||
-          { name: winnerId, emoji: "🏆", color: GV.yellowB };
+          { name: winnerId, emoji: "🏆", color: GV_DARK.yellowB };
         const winnerEntry = {
           playerId: winnerId,
           playerName: winnerPlayer.name,
@@ -932,9 +1018,9 @@ export default function App() {
 
   // ── Score preview ──
   useEffect(() => {
-    if (!rawInput || !selPlayer) { setPreview(null); return; }
-    setPreview(scoreSubmission(rawInput, category, selPlayer, submissions, birthdays, hofList));
-  }, [rawInput, selPlayer, category, submissions]);
+    if (!rawInput || !currentPlayer) { setPreview(null); return; }
+    setPreview(scoreSubmission(rawInput, category, currentPlayer.id, submissions, birthdays, hofList));
+  }, [rawInput, currentPlayer, category, submissions]);
 
   // ── Last visited tracking ──
   const [lastVisited] = useState(() => {
@@ -947,7 +1033,7 @@ export default function App() {
     ? submissions.filter(s => new Date(s.timestamp) > lastVisited).length
     : 0;
 
-  // ── Image change ──
+  // ── Image ──
   async function handleImageChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -962,19 +1048,17 @@ export default function App() {
   // ── Submit ──
   async function handleSubmit() {
     setSubmitError("");
-    if (!selPlayer)       { setSubmitError("Select a player."); return; }
     if (!rawInput.trim()) { setSubmitError("Enter the number you found."); return; }
     if (!imageFile)       { setSubmitError("Attach a proof photo — pic or it didn't happen! 📷"); return; }
-    if (hasPlayerSubmittedThisFind(submissions, selPlayer, rawInput)) {
+    if (hasPlayerSubmittedThisFind(submissions, currentPlayer.id, rawInput)) {
       setSubmitError("You already submitted this find!"); return;
     }
     setSubmitting(true);
     try {
-      const score = scoreSubmission(rawInput, category, selPlayer, submissions, birthdays, hofList);
+      const score = scoreSubmission(rawInput, category, currentPlayer.id, submissions, birthdays, hofList);
       const imageData = await compressImage(imageFile);
 
-      // Personal best check
-      const playerSubs = submissions.filter(s => s.playerId === selPlayer);
+      const playerSubs = submissions.filter(s => s.playerId === currentPlayer.id);
       const prevBest = playerSubs.length ? Math.max(...playerSubs.map(s => s.score)) : 0;
       if (score.total > prevBest && prevBest > 0) {
         setShowConfetti(true);
@@ -982,8 +1066,8 @@ export default function App() {
       }
 
       await addDoc(collection(db, "submissions"), {
-        playerId: selPlayer,
-        playerName: players.find(p => p.id === selPlayer)?.name || selPlayer,
+        playerId: currentPlayer.id,
+        playerName: currentPlayer.name,
         raw: rawInput.trim(), category: category || null,
         note: note.trim(), score: score.total, scoreDetail: score,
         hasImage: true, imageData, reactions: {},
@@ -998,27 +1082,41 @@ export default function App() {
     setSubmitting(false);
   }
 
-  function handleAddPlayer({ name, emoji, color, birthday }) {
+  // ── Player CRUD ──
+  async function handleAddPlayer({ name, emoji, color, birthday }) {
     const id = name.toLowerCase().replace(/\s+/g,"_") + "_" + Date.now();
-    setPlayers(prev => [...prev, { id, name, emoji, color }]);
-    setBirthdays(prev => ({ ...prev, [id]: birthday }));
-    setPlayersDirty(true);
-    setBirthdaysDirty(true);
+    await setDoc(doc(db, "players", id), { id, name, emoji, color, isAdmin: false, birthday, theme: "dark" });
     setShowAddPlayer(false);
   }
 
-  function handleEditPlayer(playerId, { emoji, color, birthday }) {
-    setPlayers(prev => prev.map(p => p.id === playerId ? { ...p, emoji, color } : p));
-    setBirthdays(prev => ({ ...prev, [playerId]: birthday }));
-    setPlayersDirty(true);
-    setBirthdaysDirty(true);
-    setEditingPlayer(null); setSelfEditingPlayer(null);
+  async function handleEditPlayer(playerId, { emoji, color, birthday }) {
+    await updateDoc(doc(db, "players", playerId), { emoji, color, birthday });
+    setEditingPlayer(null);
+    setEditingCurrentPlayer(false);
   }
 
-  function handleRemovePlayer(playerId) {
-    setPlayers(prev => prev.filter(p => p.id !== playerId));
-    setPlayersDirty(true);
+  async function handleRemovePlayer(playerId) {
+    await deleteDoc(doc(db, "players", playerId));
     setEditingPlayer(null);
+  }
+
+  function handleSelectPlayer(player) {
+    localStorage.setItem("ctz_player_id", player.id);
+    setCurrentPlayer(player);
+  }
+
+  function handleLogout() {
+    localStorage.removeItem("ctz_player_id");
+    setCurrentPlayer(null);
+    setShowProfileSheet(false);
+    setTab("board");
+  }
+
+  async function handleThemeToggle() {
+    const newTheme = currentPlayer.theme === "light" ? "dark" : "light";
+    setCurrentPlayer(prev => ({ ...prev, theme: newTheme }));
+    try { await updateDoc(doc(db, "players", currentPlayer.id), { theme: newTheme }); }
+    catch(e) { console.error(e); }
   }
 
   function addHof() {
@@ -1059,12 +1157,29 @@ export default function App() {
               color:GV.bg0, fontWeight:700, cursor:"pointer", fontFamily:"inherit", fontSize:13 },
   };
 
-  if (!loaded) return (
-    <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex",
+  if (!loaded || !playersLoaded) return (
+    <div style={{ background:GV_DARK.bg0, minHeight:"100vh", display:"flex",
       alignItems:"center", justifyContent:"center",
-      color:GV.orangeB, fontFamily:"'Courier Prime',monospace", fontSize:20 }}>
+      color:GV_DARK.orangeB, fontFamily:"'Courier Prime',monospace", fontSize:20 }}>
       Loading Clocktzee…
     </div>
+  );
+
+  if (!currentPlayer) return (
+    <ThemeContext.Provider value={GV_DARK}>
+      <PlayerSelectScreen players={players} onSelect={handleSelectPlayer} onAddPlayer={() => setShowAddPlayer(true)} />
+      {showAddPlayer && (
+        <PlayerModal
+          player={null} birthday={null}
+          onSave={handleAddPlayer} onRemove={null}
+          onClose={() => setShowAddPlayer(false)}
+          inputStyle={{ background:GV_DARK.bg0, border:`1px solid ${GV_DARK.bg2}`, borderRadius:10,
+            padding:"12px 14px", color:GV_DARK.fg, fontSize:13, fontFamily:"inherit",
+            outline:"none", boxSizing:"border-box" }}
+          isEdit={false}
+        />
+      )}
+    </ThemeContext.Provider>
   );
 
   const NAV = [
@@ -1073,440 +1188,417 @@ export default function App() {
     ["feed",      "📋 Feed"],
     ["rules",     "📖 Rules"],
     ["champions", "🥇 Champs"],
-    ["admin",     "⚙️ Admin"],
+    ...(currentPlayer.isAdmin ? [["admin","⚙️ Admin"]] : []),
   ];
 
   return (
-    <div style={{ background:GV.bg0, minHeight:"100vh",
-      fontFamily:"'Courier Prime',monospace", color:GV.fg,
-      maxWidth:480, margin:"0 auto", paddingBottom:80 }}>
+    <ThemeContext.Provider value={GV}>
+      <div style={{ background:GV.bg0, minHeight:"100vh",
+        fontFamily:"'Courier Prime',monospace", color:GV.fg,
+        maxWidth:480, margin:"0 auto", paddingBottom:80 }}>
 
-      <Confetti active={showConfetti} />
+        <Confetti active={showConfetti} />
 
-      {/* Modals */}
-      {pendingWinner && (
-        <WinnerBanner
-          winner={pendingWinner}
-          periodLabel={pendingWinner.periodLabel}
-          onDismiss={() => setPendingWinner(null)}
-        />
-      )}
-      {profilePlayer && (
-        <PlayerProfile
-          player={profilePlayer} submissions={submissions}
-          onClose={() => setProfilePlayer(null)}
-          onEdit={() => { setSelfEditingPlayer(profilePlayer); setProfilePlayer(null); }}
-        />
-      )}
-      {selfEditingPlayer && (
-        <PlayerModal
-          player={selfEditingPlayer} birthday={birthdays[selfEditingPlayer.id]}
-          onSave={changes => handleEditPlayer(selfEditingPlayer.id, changes)}
-          onRemove={null} onClose={() => setSelfEditingPlayer(null)}
-          inputStyle={S.input} isEdit
-        />
-      )}
-      {showAddPlayer && (
-        <PlayerModal
-          player={null} birthday={null}
-          onSave={handleAddPlayer}
-          onRemove={null} onClose={() => setShowAddPlayer(false)}
-          inputStyle={S.input} isEdit={false}
-        />
-      )}
-      {editingPlayer && (
-        <PlayerModal
-          player={editingPlayer} birthday={birthdays[editingPlayer.id]}
-          onSave={changes => handleEditPlayer(editingPlayer.id, changes)}
-          onRemove={() => handleRemovePlayer(editingPlayer.id)}
-          onClose={() => setEditingPlayer(null)}
-          inputStyle={S.input} isEdit
-        />
-      )}
-
-      {/* Header */}
-      <div style={{ padding:"24px 20px 14px", borderBottom:`1px solid ${GV.bg2}`,
-        background:`linear-gradient(180deg,${GV.bg1} 0%,${GV.bg0} 100%)` }}>
-        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-          <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-            <span style={{ fontSize:30, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
-            <span style={{ fontSize:30, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
-            <span style={{ fontSize:20, marginLeft:4 }}>🎲</span>
-          </div>
-          <button onClick={() => setShowAddPlayer(true)} style={{
-            padding:"8px 16px", background:`${GV.orangeB}22`,
-            border:`1px solid ${GV.orangeB}`, borderRadius:20,
-            color:GV.orangeB, fontSize:12, fontWeight:700,
-            cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
-          }}>+ JOIN</button>
-        </div>
-      </div>
-
-      {/* Nav */}
-      <div style={{ display:"flex", borderBottom:`1px solid ${GV.bg2}`,
-        background:GV.bg1, position:"sticky", top:0, zIndex:10, overflowX:"auto" }}>
-        {NAV.map(([id, label]) => (
-          <button key={id} onClick={() => setTab(id)} style={{
-            flex:1, minWidth:55, padding:"11px 3px", background:"none", border:"none",
-            borderBottom: tab===id ? `2px solid ${GV.orangeB}` : `2px solid transparent`,
-            color: tab===id ? GV.orangeB : GV.bg4,
-            fontSize:9, letterSpacing:0.5, cursor:"pointer", fontFamily:"inherit",
-            fontWeight: tab===id ? 700 : 400, transition:"all 0.15s", whiteSpace:"nowrap",
-          }}>{label}</button>
-        ))}
-      </div>
-
-      <div style={{ padding:"20px 16px" }}>
-
-        {/* ── BOARD ── */}
-        {tab==="board" && (
-          <div>
-            <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
-              STANDINGS · {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode).toUpperCase()}
-            </div>
-            {leaderboard.map((p, i) => (
-              <div key={p.id} onClick={() => setProfilePlayer(p)}
-                style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer",
-                  background: i===0 ? `${GV.orangeB}11` : GV.bg1,
-                  border:`1px solid ${i===0 ? GV.orangeB+"44" : GV.bg2}`,
-                  borderRadius:12, padding:"14px 16px", marginBottom:10, transition:"border-color 0.15s" }}
-                onMouseOver={e => e.currentTarget.style.borderColor = p.color+"66"}
-                onMouseOut={e => e.currentTarget.style.borderColor = i===0 ? GV.orangeB+"44" : GV.bg2}>
-                <div style={{ color:i===0?GV.orangeB:GV.bg3, fontSize:18, fontWeight:900, width:28, textAlign:"center" }}>
-                  {i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`}
-                </div>
-                <PlayerBadge player={p} />
-                <div style={{ flex:1 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                    <span style={{ fontWeight:700, fontSize:16, color:i===0?GV.fg:GV.fg1 }}>{p.name}</span>
-                    {p.hasStreak && <span title="On a streak!">🔥</span>}
-                  </div>
-                  <div style={{ color:GV.fg3, fontSize:11, marginTop:2 }}>
-                    {p.count} find{p.count!==1?"s":""} · best: +{p.best}
-                  </div>
-                </div>
-                <div style={{ fontWeight:900, fontSize:26, color:i===0?GV.orangeB:GV.bg4,
-                  fontFamily:"'Courier Prime',monospace" }}>{p.total}</div>
-                <div style={{ color:GV.bg3, fontSize:12 }}>›</div>
-              </div>
-            ))}
-            {leaderboard.every(p => p.total===0) && (
-              <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>
-                No finds yet. Be the first! 🎲
-              </div>
-            )}
-            <div style={{ marginTop:24, textAlign:"center" }}>
-              <div style={{ color:GV.bg3, fontSize:10, letterSpacing:3 }}>
-                GRANDPAPPYLABS · v{VERSION}
-              </div>
-              <div style={{ color:GV.bg2, fontSize:10, letterSpacing:2, marginTop:3 }}>
-                FAMILY NUMBER HUNT
-              </div>
-            </div>
-          </div>
+        {pendingWinner && (
+          <WinnerBanner
+            winner={pendingWinner}
+            periodLabel={pendingWinner.periodLabel}
+            onDismiss={() => setPendingWinner(null)}
+          />
+        )}
+        {profilePlayer && (
+          <PlayerProfile
+            player={profilePlayer} submissions={submissions}
+            onClose={() => setProfilePlayer(null)}
+            onEdit={() => { setEditingPlayer(profilePlayer); setProfilePlayer(null); }}
+          />
+        )}
+        {showProfileSheet && (
+          <ProfileSheet
+            player={currentPlayer} submissions={submissions}
+            onClose={() => setShowProfileSheet(false)}
+            onEdit={() => { setEditingCurrentPlayer(true); setShowProfileSheet(false); }}
+            onLogout={handleLogout}
+            onThemeToggle={handleThemeToggle}
+          />
+        )}
+        {editingCurrentPlayer && (
+          <PlayerModal
+            player={currentPlayer} birthday={currentPlayer.birthday}
+            onSave={changes => handleEditPlayer(currentPlayer.id, changes)}
+            onRemove={null} onClose={() => setEditingCurrentPlayer(false)}
+            inputStyle={S.input} isEdit
+          />
+        )}
+        {showAddPlayer && (
+          <PlayerModal
+            player={null} birthday={null}
+            onSave={handleAddPlayer} onRemove={null}
+            onClose={() => setShowAddPlayer(false)}
+            inputStyle={S.input} isEdit={false}
+          />
+        )}
+        {editingPlayer && (
+          <PlayerModal
+            player={editingPlayer} birthday={editingPlayer.birthday}
+            onSave={changes => handleEditPlayer(editingPlayer.id, changes)}
+            onRemove={() => handleRemovePlayer(editingPlayer.id)}
+            onClose={() => setEditingPlayer(null)}
+            inputStyle={S.input} isEdit
+          />
         )}
 
-        {/* ── SUBMIT ── */}
-        {tab==="submit" && (
-          <div>
-            <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>LOG A FIND</div>
+        {/* Header */}
+        <div style={{ padding:"24px 20px 14px", borderBottom:`1px solid ${GV.bg2}`,
+          background:`linear-gradient(180deg,${GV.bg1} 0%,${GV.bg0} 100%)` }}>
+          <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
+              <span style={{ fontSize:30, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
+              <span style={{ fontSize:30, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
+              <span style={{ fontSize:20, marginLeft:4 }}>🎲</span>
+            </div>
+            <button onClick={() => setShowProfileSheet(true)} style={{
+              width:40, height:40, borderRadius:"50%",
+              background:currentPlayer.color+"33",
+              border:`2px solid ${currentPlayer.color}`,
+              display:"flex", alignItems:"center", justifyContent:"center",
+              fontSize:20, cursor:"pointer", padding:0, flexShrink:0,
+            }}>{currentPlayer.emoji}</button>
+          </div>
+        </div>
 
-            <div style={{ marginBottom:16 }}>
-              <label style={S.label}>WHO FOUND IT?</label>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-                {players.map(p => (
-                  <button key={p.id} onClick={() => setSelPlayer(p.id)} style={{
-                    padding:"8px 14px", borderRadius:20,
-                    border:`1.5px solid ${selPlayer===p.id ? p.color : GV.bg2}`,
-                    background: selPlayer===p.id ? p.color+"22" : "transparent",
-                    color: selPlayer===p.id ? p.color : GV.fg3,
-                    fontSize:13, cursor:"pointer", fontFamily:"inherit",
-                    display:"flex", alignItems:"center", gap:6, transition:"all 0.15s",
-                  }}>{p.emoji} {p.name}</button>
-                ))}
+        {/* Nav */}
+        <div style={{ display:"flex", borderBottom:`1px solid ${GV.bg2}`,
+          background:GV.bg1, position:"sticky", top:0, zIndex:10, overflowX:"auto" }}>
+          {NAV.map(([id, label]) => (
+            <button key={id} onClick={() => setTab(id)} style={{
+              flex:1, minWidth:55, padding:"11px 3px", background:"none", border:"none",
+              borderBottom: tab===id ? `2px solid ${GV.orangeB}` : `2px solid transparent`,
+              color: tab===id ? GV.orangeB : GV.bg4,
+              fontSize:9, letterSpacing:0.5, cursor:"pointer", fontFamily:"inherit",
+              fontWeight: tab===id ? 700 : 400, transition:"all 0.15s", whiteSpace:"nowrap",
+            }}>{label}</button>
+          ))}
+        </div>
+
+        <div style={{ padding:"20px 16px" }}>
+
+          {/* ── BOARD ── */}
+          {tab==="board" && (
+            <div>
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
+                STANDINGS · {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode).toUpperCase()}
+              </div>
+              {leaderboard.map((p, i) => (
+                <div key={p.id} onClick={() => setProfilePlayer(p)}
+                  style={{ display:"flex", alignItems:"center", gap:12, cursor:"pointer",
+                    background: i===0 ? `${GV.orangeB}11` : GV.bg1,
+                    border:`1px solid ${i===0 ? GV.orangeB+"44" : GV.bg2}`,
+                    borderRadius:12, padding:"14px 16px", marginBottom:10, transition:"border-color 0.15s" }}
+                  onMouseOver={e => e.currentTarget.style.borderColor = p.color+"66"}
+                  onMouseOut={e => e.currentTarget.style.borderColor = i===0 ? GV.orangeB+"44" : GV.bg2}>
+                  <div style={{ color:i===0?GV.orangeB:GV.bg3, fontSize:18, fontWeight:900, width:28, textAlign:"center" }}>
+                    {i===0?"🥇":i===1?"🥈":i===2?"🥉":`#${i+1}`}
+                  </div>
+                  <PlayerBadge player={p} />
+                  <div style={{ flex:1 }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <span style={{ fontWeight:700, fontSize:16, color:i===0?GV.fg:GV.fg1 }}>{p.name}</span>
+                      {p.hasStreak && <span title="On a streak!">🔥</span>}
+                    </div>
+                    <div style={{ color:GV.fg3, fontSize:11, marginTop:2 }}>
+                      {p.count} find{p.count!==1?"s":""} · best: +{p.best}
+                    </div>
+                  </div>
+                  <div style={{ fontWeight:900, fontSize:26, color:i===0?GV.orangeB:GV.bg4,
+                    fontFamily:"'Courier Prime',monospace" }}>{p.total}</div>
+                  <div style={{ color:GV.bg3, fontSize:12 }}>›</div>
+                </div>
+              ))}
+              {leaderboard.every(p => p.total===0) && (
+                <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>
+                  No finds yet. Be the first! 🎲
+                </div>
+              )}
+              <div style={{ marginTop:24, textAlign:"center" }}>
+                <div style={{ color:GV.bg3, fontSize:10, letterSpacing:3 }}>
+                  GRANDPAPPYLABS · v{VERSION}
+                </div>
+                <div style={{ color:GV.bg2, fontSize:10, letterSpacing:2, marginTop:3 }}>
+                  FAMILY NUMBER HUNT
+                </div>
               </div>
             </div>
+          )}
 
-            <div style={{ marginBottom:16 }}>
-              <label style={S.label}>WHAT DID YOU SEE?</label>
-              <input value={rawInput} onChange={e => setRawInput(e.target.value)}
-                placeholder="e.g. 11:11 or $42.00 or 4204"
-                style={{ ...S.input, width:"100%", fontSize:20, letterSpacing:3,
-                  fontFamily:"'Courier Prime',monospace" }} />
-            </div>
+          {/* ── SUBMIT ── */}
+          {tab==="submit" && (
+            <div>
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>LOG A FIND</div>
 
-            <div style={{ marginBottom:16 }}>
-              <label style={S.label}>
-                CATEGORY <span style={{ color:GV.bg3, letterSpacing:0, textTransform:"none", fontSize:10 }}>· optional</span>
-              </label>
-              <select value={category} onChange={e => setCategory(e.target.value)}
-                style={{ ...S.input, width:"100%", cursor:"pointer" }}>
-                <option value="">— skip —</option>
-                {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            </div>
-
-            <div style={{ marginBottom:16 }}>
-              <label style={S.label}>
-                PROOF PHOTO <span style={{ color:GV.redB }}>* required</span>
-                <span style={{ color:GV.bg3, marginLeft:8, letterSpacing:0,
-                  textTransform:"none", fontSize:10, fontWeight:400 }}>· expires 48h after submit</span>
-              </label>
-              {!imagePreviewUrl ? (
-                <div onClick={() => fileInputRef.current?.click()}
-                  style={{ border:`2px dashed ${GV.bg2}`, borderRadius:12, padding:"28px 16px",
-                    textAlign:"center", cursor:"pointer", color:GV.fg3, fontSize:13, transition:"all 0.15s" }}
-                  onMouseOver={e => e.currentTarget.style.borderColor=GV.orangeB}
-                  onMouseOut={e => e.currentTarget.style.borderColor=GV.bg2}>
-                  <div style={{ fontSize:32, marginBottom:8 }}>📷</div>
-                  Tap to attach screenshot or photo
+              {/* Current player indicator */}
+              <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:20,
+                padding:"10px 14px", background:GV.bg1,
+                border:`1px solid ${currentPlayer.color}44`, borderRadius:12 }}>
+                <div style={{ width:32, height:32, borderRadius:"50%",
+                  background:currentPlayer.color+"33", border:`2px solid ${currentPlayer.color}`,
+                  display:"flex", alignItems:"center", justifyContent:"center", fontSize:16 }}>
+                  {currentPlayer.emoji}
                 </div>
-              ) : (
-                <div style={{ position:"relative", borderRadius:12, overflow:"hidden",
-                  border:`1px solid ${GV.orangeB}55` }}>
-                  <img src={imagePreviewUrl} alt="preview"
-                    style={{ width:"100%", display:"block", maxHeight:240, objectFit:"cover" }} />
-                  <button onClick={clearImage} style={{ position:"absolute", top:8, right:8,
-                    background:"rgba(0,0,0,0.7)", border:"none", borderRadius:"50%",
-                    width:28, height:28, color:GV.fg, fontSize:14, cursor:"pointer",
-                    display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
-                  <div style={{ position:"absolute", bottom:0, left:0, right:0,
-                    background:"rgba(0,0,0,0.65)", padding:"5px 10px",
-                    fontSize:10, color:GV.fg3, letterSpacing:1 }}>
-                    ⏱ PROOF EXPIRES 48H AFTER SUBMIT
+                <span style={{ color:currentPlayer.color, fontWeight:700, fontSize:14 }}>{currentPlayer.name}</span>
+              </div>
+
+              <div style={{ marginBottom:16 }}>
+                <label style={S.label}>WHAT DID YOU SEE?</label>
+                <input value={rawInput} onChange={e => setRawInput(e.target.value)}
+                  placeholder="e.g. 11:11 or $42.00 or 4204"
+                  style={{ ...S.input, width:"100%", fontSize:20, letterSpacing:3,
+                    fontFamily:"'Courier Prime',monospace" }} />
+              </div>
+
+              <div style={{ marginBottom:16 }}>
+                <label style={S.label}>
+                  CATEGORY <span style={{ color:GV.bg3, letterSpacing:0, textTransform:"none", fontSize:10 }}>· optional</span>
+                </label>
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  style={{ ...S.input, width:"100%", cursor:"pointer" }}>
+                  <option value="">— skip —</option>
+                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+
+              <div style={{ marginBottom:16 }}>
+                <label style={S.label}>
+                  PROOF PHOTO <span style={{ color:GV.redB }}>* required</span>
+                  <span style={{ color:GV.bg3, marginLeft:8, letterSpacing:0,
+                    textTransform:"none", fontSize:10, fontWeight:400 }}>· expires 48h after submit</span>
+                </label>
+                {!imagePreviewUrl ? (
+                  <div onClick={() => fileInputRef.current?.click()}
+                    style={{ border:`2px dashed ${GV.bg2}`, borderRadius:12, padding:"28px 16px",
+                      textAlign:"center", cursor:"pointer", color:GV.fg3, fontSize:13, transition:"all 0.15s" }}
+                    onMouseOver={e => e.currentTarget.style.borderColor=GV.orangeB}
+                    onMouseOut={e => e.currentTarget.style.borderColor=GV.bg2}>
+                    <div style={{ fontSize:32, marginBottom:8 }}>📷</div>
+                    Tap to attach screenshot or photo
+                  </div>
+                ) : (
+                  <div style={{ position:"relative", borderRadius:12, overflow:"hidden",
+                    border:`1px solid ${GV.orangeB}55` }}>
+                    <img src={imagePreviewUrl} alt="preview"
+                      style={{ width:"100%", display:"block", maxHeight:240, objectFit:"cover" }} />
+                    <button onClick={clearImage} style={{ position:"absolute", top:8, right:8,
+                      background:"rgba(0,0,0,0.7)", border:"none", borderRadius:"50%",
+                      width:28, height:28, color:GV.fg, fontSize:14, cursor:"pointer",
+                      display:"flex", alignItems:"center", justifyContent:"center" }}>✕</button>
+                    <div style={{ position:"absolute", bottom:0, left:0, right:0,
+                      background:"rgba(0,0,0,0.65)", padding:"5px 10px",
+                      fontSize:10, color:GV.fg3, letterSpacing:1 }}>
+                      ⏱ PROOF EXPIRES 48H AFTER SUBMIT
+                    </div>
+                  </div>
+                )}
+                <input ref={fileInputRef} type="file" accept="image/*"
+                  onChange={handleImageChange} style={{ display:"none" }} />
+              </div>
+
+              <div style={{ marginBottom:16 }}>
+                <label style={S.label}>NOTE (optional)</label>
+                <input value={note} onChange={e => setNote(e.target.value)}
+                  placeholder="Where / context…" style={{ ...S.input, width:"100%" }} />
+              </div>
+
+              <ScorePreview score={preview} />
+
+              <button onClick={handleSubmit} disabled={submitting} style={{
+                width:"100%", marginTop:16, padding:"15px",
+                background: submitting ? GV.bg2 : `linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+                border:"none", borderRadius:12, color:GV.bg0, fontSize:15,
+                fontWeight:900, letterSpacing:2, cursor: submitting ? "not-allowed" : "pointer",
+                fontFamily:"inherit", transition:"all 0.15s",
+              }}>
+                {submitting ? "SAVING…" : "SUBMIT FIND"}
+              </button>
+
+              {submitError && (
+                <div style={{ marginTop:12, color:GV.redB, fontSize:13, textAlign:"center" }}>
+                  {submitError}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── FEED ── */}
+          {tab==="feed" && (
+            <div>
+              {newFindsCount > 0 && (
+                <div style={{ background:`${GV.orangeB}18`, border:`1px solid ${GV.orangeB}44`,
+                  borderRadius:10, padding:"10px 14px", marginBottom:16,
+                  display:"flex", alignItems:"center", gap:10 }}>
+                  <span style={{ fontSize:16 }}>🆕</span>
+                  <span style={{ color:GV.orangeB, fontSize:13, fontWeight:600 }}>
+                    {newFindsCount} new find{newFindsCount!==1?"s":""} since your last visit
+                  </span>
+                </div>
+              )}
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
+                RECENT FINDS · {submissions.length} TOTAL
+              </div>
+              {submissions.length===0 && (
+                <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>No finds yet!</div>
+              )}
+              {submissions.slice(0,40).map(s => {
+                const player = players.find(p => p.id===s.playerId) ||
+                  { name: s.playerName || s.playerId || "?", emoji:"👤", color:GV.bg4 };
+                const dt = new Date(s.timestamp);
+                return (
+                  <div key={s.id} style={{ ...S.card, borderLeft:`3px solid ${player.color}` }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ fontSize:18 }}>{player.emoji}</span>
+                        <div>
+                          <span style={{ color:player.color, fontWeight:700, fontSize:13 }}>{player.name}</span>
+                          {s.category && <span style={{ color:GV.bg3, fontSize:11, marginLeft:8 }}>{s.category}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                        <span style={{ color:GV.orangeB, fontWeight:900, fontSize:22,
+                          fontFamily:"'Courier Prime',monospace" }}>+{s.score}</span>
+                        {currentPlayer.isAdmin && (
+                          <button onClick={async () => {
+                            if (window.confirm("Delete this find? This cannot be undone.")) {
+                              try { await deleteDoc(doc(db, "submissions", s.id)); }
+                              catch(e) { console.error(e); }
+                            }
+                          }} style={{ background:"transparent", border:`1px solid ${GV.red}`,
+                            borderRadius:6, padding:"3px 7px", color:GV.redB,
+                            fontSize:11, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ marginTop:8, fontFamily:"'Courier Prime',monospace",
+                      fontSize:22, color:GV.fg, letterSpacing:3 }}>{s.raw}</div>
+                    <div style={{ marginTop:4, color:GV.orangeB, fontSize:12 }}>{s.scoreDetail?.base?.name}</div>
+                    {s.scoreDetail?.bonuses?.length > 0 && (
+                      <div style={{ marginTop:3, color:GV.yellowB, fontSize:11 }}>
+                        {s.scoreDetail.bonuses.map(b => b.label).join(" · ")}
+                      </div>
+                    )}
+                    <ProofImage imageData={s.imageData} timestamp={s.timestamp} hadImage={!!s.hasImage} />
+                    <ReactionBar submissionId={s.id} reactions={s.reactions || {}} />
+                    {s.note && <div style={{ marginTop:6, color:GV.fg3, fontSize:12, fontStyle:"italic" }}>"{s.note}"</div>}
+                    <div style={{ marginTop:6, color:GV.bg2, fontSize:11 }}>
+                      {dt.toLocaleDateString()} {dt.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* ── RULES ── */}
+          {tab==="rules" && <RulesTab hofList={hofList} />}
+
+          {/* ── CHAMPIONS ── */}
+          {tab==="champions" && <ChampionsTab champions={champions} players={players} />}
+
+          {/* ── ADMIN ── */}
+          {tab==="admin" && currentPlayer.isAdmin && (
+            <div>
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>SETTINGS</div>
+
+              <div style={{ marginBottom:20, padding:"14px 16px", background:GV.bg1,
+                border:`1px solid ${GV.bg2}`, borderRadius:12 }}>
+                <label style={{ ...S.label, marginBottom:10 }}>RESET PERIOD</label>
+                <select value={periodMode} onChange={e => { setPeriodMode(e.target.value); setPeriodModeDirty(true); }}
+                  style={{ ...S.input, width:"100%", cursor:"pointer", marginBottom:8 }}>
+                  <option value="monthly">Monthly (resets 1st of every month)</option>
+                  <option value="quarterly">Quarterly (resets Jan/Apr/Jul/Oct 1st)</option>
+                </select>
+                <div style={{ color:GV.bg3, fontSize:11 }}>
+                  Current period: {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode)}
+                </div>
+              </div>
+
+              <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
+                {[["players","👥 Players"],["hof","🏆 Hall of Fame"]].map(([id,label]) => (
+                  <button key={id} onClick={() => setAdminSection(id)} style={{
+                    padding:"7px 14px", borderRadius:20,
+                    border:`1px solid ${adminSection===id ? GV.orangeB : GV.bg2}`,
+                    background: adminSection===id ? `${GV.orangeB}18` : "transparent",
+                    color: adminSection===id ? GV.orangeB : GV.fg3,
+                    fontSize:12, cursor:"pointer", fontFamily:"inherit",
+                  }}>{label}</button>
+                ))}
+              </div>
+
+              {adminSection==="players" && (
+                <div>
+                  {players.map(p => (
+                    <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
+                      padding:"10px 14px", borderRadius:10, marginBottom:8,
+                      background:GV.bg, border:`1px solid ${GV.bg2}` }}>
+                      <PlayerBadge player={p} />
+                      <span style={{ flex:1, color:GV.fg1 }}>{p.name}</span>
+                      <span style={{ color:GV.bg3, fontSize:12, marginRight:8 }}>
+                        {submissions.filter(s => s.playerId===p.id).length} finds
+                      </span>
+                      <button onClick={() => setEditingPlayer(p)} style={{
+                        padding:"5px 10px", background:"transparent",
+                        border:`1px solid ${GV.bg2}`, borderRadius:8,
+                        color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit",
+                      }}>Edit</button>
+                    </div>
+                  ))}
+                  <button onClick={() => setShowAddPlayer(true)} style={{
+                    width:"100%", marginTop:12, padding:"12px", background:"transparent",
+                    border:`1px dashed ${GV.bg2}`, borderRadius:10, color:GV.fg3,
+                    fontSize:13, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s",
+                  }}
+                    onMouseOver={e => { e.currentTarget.style.borderColor=GV.orangeB; e.currentTarget.style.color=GV.orangeB; }}
+                    onMouseOut={e => { e.currentTarget.style.borderColor=GV.bg2; e.currentTarget.style.color=GV.fg3; }}
+                  >+ Add Player</button>
+                </div>
+              )}
+
+              {adminSection==="hof" && (
+                <div>
+                  <div style={{ color:GV.fg3, fontSize:11, marginBottom:12 }}>Each earns +40 bonus points</div>
+                  {hofList.map((h,i) => (
+                    <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                      padding:"9px 14px", borderRadius:10, marginBottom:6,
+                      background:GV.bg, border:`1px solid ${GV.bg2}` }}>
+                      <span style={{ color:GV.yellowB, fontFamily:"'Courier Prime',monospace", letterSpacing:2 }}>{h.number}</span>
+                      <span style={{ color:GV.fg3, fontSize:12 }}>{h.label}</span>
+                    </div>
+                  ))}
+                  <div style={{ marginTop:16, display:"flex", gap:8, flexWrap:"wrap" }}>
+                    <input value={newHof} onChange={e => setNewHof(e.target.value)}
+                      placeholder="Number" style={{ ...S.input, flex:1, minWidth:90 }} />
+                    <input value={newHofLabel} onChange={e => setNewHofLabel(e.target.value)}
+                      placeholder="Label" style={{ ...S.input, flex:2, minWidth:120 }} />
+                    <button onClick={addHof} style={S.addBtn}>Add</button>
                   </div>
                 </div>
               )}
-              <input ref={fileInputRef} type="file" accept="image/*"
-                onChange={handleImageChange} style={{ display:"none" }} />
-            </div>
 
-            <div style={{ marginBottom:16 }}>
-              <label style={S.label}>NOTE (optional)</label>
-              <input value={note} onChange={e => setNote(e.target.value)}
-                placeholder="Where / context…" style={{ ...S.input, width:"100%" }} />
-            </div>
-
-            <ScorePreview score={preview} />
-
-            <button onClick={handleSubmit} disabled={submitting} style={{
-              width:"100%", marginTop:16, padding:"15px",
-              background: submitting ? GV.bg2 : `linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
-              border:"none", borderRadius:12, color:GV.bg0, fontSize:15,
-              fontWeight:900, letterSpacing:2, cursor: submitting ? "not-allowed" : "pointer",
-              fontFamily:"inherit", transition:"all 0.15s",
-            }}>
-              {submitting ? "SAVING…" : "SUBMIT FIND"}
-            </button>
-
-            {submitError && (
-              <div style={{ marginTop:12, color:GV.redB, fontSize:13, textAlign:"center" }}>
-                {submitError}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ── FEED ── */}
-        {tab==="feed" && (
-          <div>
-            {newFindsCount > 0 && (
-              <div style={{ background:`${GV.orangeB}18`, border:`1px solid ${GV.orangeB}44`,
-                borderRadius:10, padding:"10px 14px", marginBottom:16,
-                display:"flex", alignItems:"center", gap:10 }}>
-                <span style={{ fontSize:16 }}>🆕</span>
-                <span style={{ color:GV.orangeB, fontSize:13, fontWeight:600 }}>
-                  {newFindsCount} new find{newFindsCount!==1?"s":""} since your last visit
-                </span>
-              </div>
-            )}
-            <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
-              RECENT FINDS · {submissions.length} TOTAL
-            </div>
-            {submissions.length===0 && (
-              <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>No finds yet!</div>
-            )}
-            {submissions.slice(0,40).map(s => {
-              const player = players.find(p => p.id===s.playerId) || { name: s.playerName || s.playerId || "?", emoji:"👤", color:GV.bg4 };
-              const dt = new Date(s.timestamp);
-              return (
-                <div key={s.id} style={{ ...S.card, borderLeft:`3px solid ${player.color}` }}>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start" }}>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ fontSize:18 }}>{player.emoji}</span>
-                      <div>
-                        <span style={{ color:player.color, fontWeight:700, fontSize:13 }}>{player.name}</span>
-                        {s.category && <span style={{ color:GV.bg3, fontSize:11, marginLeft:8 }}>{s.category}</span>}
-                      </div>
-                    </div>
-                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ color:GV.orangeB, fontWeight:900, fontSize:22,
-                        fontFamily:"'Courier Prime',monospace" }}>+{s.score}</span>
-                      {adminUnlocked && (
-                        <button onClick={async () => {
-                          if (window.confirm("Delete this find? This cannot be undone.")) {
-                            try {
-                              await deleteDoc(doc(db, "submissions", s.id));
-                            } catch(e) { console.error(e); }
-                          }
-                        }} style={{ background:"transparent", border:`1px solid ${GV.red}`,
-                          borderRadius:6, padding:"3px 7px", color:GV.redB,
-                          fontSize:11, cursor:"pointer", fontFamily:"inherit", flexShrink:0 }}>
-                          ✕
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ marginTop:8, fontFamily:"'Courier Prime',monospace",
-                    fontSize:22, color:GV.fg, letterSpacing:3 }}>{s.raw}</div>
-                  <div style={{ marginTop:4, color:GV.orangeB, fontSize:12 }}>{s.scoreDetail?.base?.name}</div>
-                  {s.scoreDetail?.bonuses?.length > 0 && (
-                    <div style={{ marginTop:3, color:GV.yellowB, fontSize:11 }}>
-                      {s.scoreDetail.bonuses.map(b => b.label).join(" · ")}
-                    </div>
-                  )}
-                  <ProofImage imageData={s.imageData} timestamp={s.timestamp} hadImage={!!s.hasImage} />
-                  <ReactionBar submissionId={s.id} reactions={s.reactions || {}} />
-                  {s.note && <div style={{ marginTop:6, color:GV.fg3, fontSize:12, fontStyle:"italic" }}>"{s.note}"</div>}
-                  <div style={{ marginTop:6, color:GV.bg2, fontSize:11 }}>
-                    {dt.toLocaleDateString()} {dt.toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* ── RULES ── */}
-        {tab==="rules" && <RulesTab hofList={hofList} />}
-
-        {/* ── CHAMPIONS ── */}
-        {tab==="champions" && <ChampionsTab champions={champions} players={players} />}
-
-        {/* ── ADMIN ── */}
-        {tab==="admin" && (
-          <div>
-            <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>SETTINGS</div>
-
-            {!adminUnlocked ? (
-              <div style={{ textAlign:"center", paddingTop:20 }}>
-                <div style={{ fontSize:32, marginBottom:12 }}>🔒</div>
-                <div style={{ color:GV.fg3, fontSize:13, marginBottom:20 }}>Enter admin PIN to continue</div>
-                <input value={pinInput}
-                  onChange={e => setPinInput(e.target.value.toUpperCase())}
-                  onKeyDown={e => {
-                    if (e.key==="Enter") {
-                      if (pinInput===ADMIN_PIN) { setAdminUnlocked(true); setPinError(""); setPinInput(""); }
-                      else { setPinError("Incorrect PIN"); setPinInput(""); }
-                    }
-                  }}
-                  placeholder="PIN" maxLength={10}
-                  style={{ ...S.input, width:120, textAlign:"center", fontSize:18, letterSpacing:6, marginBottom:12 }}
-                />
-                <br/>
-                <button onClick={() => {
-                  if (pinInput===ADMIN_PIN) { setAdminUnlocked(true); setPinError(""); setPinInput(""); }
-                  else { setPinError("Incorrect PIN"); setPinInput(""); }
-                }} style={{ padding:"10px 28px", background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
-                  border:"none", borderRadius:10, color:GV.bg0, fontWeight:700,
-                  cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>
-                  Unlock
+              <div style={{ marginTop:32, borderTop:`1px solid ${GV.bg2}`, paddingTop:20 }}>
+                <div style={{ color:GV.bg3, fontSize:11, letterSpacing:2, marginBottom:12 }}>DANGER ZONE</div>
+                <button onClick={handleResetScores}
+                  style={{ width:"100%", padding:"11px", background:"transparent",
+                    border:`1px solid ${GV.red}`, borderRadius:10, color:GV.redB,
+                    fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  Reset All Scores
                 </button>
-                {pinError && <div style={{ color:GV.redB, fontSize:12, marginTop:10 }}>{pinError}</div>}
               </div>
-            ) : (
-              <>
-                {/* Period mode */}
-                <div style={{ marginBottom:20, padding:"14px 16px", background:GV.bg1,
-                  border:`1px solid ${GV.bg2}`, borderRadius:12 }}>
-                  <label style={{ ...S.label, marginBottom:10 }}>RESET PERIOD</label>
-                  <select value={periodMode} onChange={e => { setPeriodMode(e.target.value); setPeriodModeDirty(true); }}
-                    style={{ ...S.input, width:"100%", cursor:"pointer", marginBottom:8 }}>
-                    <option value="monthly">Monthly (resets 1st of every month)</option>
-                    <option value="quarterly">Quarterly (resets Jan/Apr/Jul/Oct 1st)</option>
-                  </select>
-                  <div style={{ color:GV.bg3, fontSize:11 }}>
-                    Current period: {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode)}
-                  </div>
-                </div>
+            </div>
+          )}
 
-                <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-                  {[["players","👥 Players"],["hof","🏆 Hall of Fame"]].map(([id,label]) => (
-                    <button key={id} onClick={() => setAdminSection(id)} style={{
-                      padding:"7px 14px", borderRadius:20,
-                      border:`1px solid ${adminSection===id ? GV.orangeB : GV.bg2}`,
-                      background: adminSection===id ? `${GV.orangeB}18` : "transparent",
-                      color: adminSection===id ? GV.orangeB : GV.fg3,
-                      fontSize:12, cursor:"pointer", fontFamily:"inherit",
-                    }}>{label}</button>
-                  ))}
-                </div>
-
-                {adminSection==="players" && (
-                  <div>
-                    {players.map(p => (
-                      <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10,
-                        padding:"10px 14px", borderRadius:10, marginBottom:8,
-                        background:GV.bg, border:`1px solid ${GV.bg2}` }}>
-                        <PlayerBadge player={p} />
-                        <span style={{ flex:1, color:GV.fg1 }}>{p.name}</span>
-                        <span style={{ color:GV.bg3, fontSize:12, marginRight:8 }}>
-                          {submissions.filter(s => s.playerId===p.id).length} finds
-                        </span>
-                        <button onClick={() => setEditingPlayer(p)} style={{
-                          padding:"5px 10px", background:"transparent",
-                          border:`1px solid ${GV.bg2}`, borderRadius:8,
-                          color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit",
-                        }}>Edit</button>
-                      </div>
-                    ))}
-                    <button onClick={() => setShowAddPlayer(true)} style={{
-                      width:"100%", marginTop:12, padding:"12px", background:"transparent",
-                      border:`1px dashed ${GV.bg2}`, borderRadius:10, color:GV.fg3,
-                      fontSize:13, cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s",
-                    }}
-                      onMouseOver={e => { e.currentTarget.style.borderColor=GV.orangeB; e.currentTarget.style.color=GV.orangeB; }}
-                      onMouseOut={e => { e.currentTarget.style.borderColor=GV.bg2; e.currentTarget.style.color=GV.fg3; }}
-                    >+ Add Player</button>
-                  </div>
-                )}
-
-                {adminSection==="hof" && (
-                  <div>
-                    <div style={{ color:GV.fg3, fontSize:11, marginBottom:12 }}>Each earns +40 bonus points</div>
-                    {hofList.map((h,i) => (
-                      <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
-                        padding:"9px 14px", borderRadius:10, marginBottom:6,
-                        background:GV.bg, border:`1px solid ${GV.bg2}` }}>
-                        <span style={{ color:GV.yellowB, fontFamily:"'Courier Prime',monospace", letterSpacing:2 }}>{h.number}</span>
-                        <span style={{ color:GV.fg3, fontSize:12 }}>{h.label}</span>
-                      </div>
-                    ))}
-                    <div style={{ marginTop:16, display:"flex", gap:8, flexWrap:"wrap" }}>
-                      <input value={newHof} onChange={e => setNewHof(e.target.value)}
-                        placeholder="Number" style={{ ...S.input, flex:1, minWidth:90 }} />
-                      <input value={newHofLabel} onChange={e => setNewHofLabel(e.target.value)}
-                        placeholder="Label" style={{ ...S.input, flex:2, minWidth:120 }} />
-                      <button onClick={addHof} style={S.addBtn}>Add</button>
-                    </div>
-                  </div>
-                )}
-
-                <div style={{ marginTop:32, borderTop:`1px solid ${GV.bg2}`, paddingTop:20 }}>
-                  <div style={{ color:GV.bg3, fontSize:11, letterSpacing:2, marginBottom:12 }}>DANGER ZONE</div>
-                  <button onClick={handleResetScores}
-                    style={{ width:"100%", padding:"11px", background:"transparent",
-                      border:`1px solid ${GV.red}`, borderRadius:10, color:GV.redB,
-                      fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-                    Reset All Scores
-                  </button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
+        </div>
+        <div style={{ height:20 }} />
       </div>
-      <div style={{ height:20 }} />
-    </div>
+    </ThemeContext.Provider>
   );
 }

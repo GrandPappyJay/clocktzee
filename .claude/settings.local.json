@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node migrate-players.js)",
+      "Bash(node seed-player-fields.js)",
+      "Bash(npm run *)",
+      "Bash(npx vite *)",
+      "Bash(curl -s http://localhost:5173)"
+    ]
+  }
+}

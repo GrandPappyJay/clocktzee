@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+migrate-players.js
+seed-player-fields.js
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
