@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, createContext, useContext } from "react";
 import { db } from "./firebase";
 import {
   collection, doc, getDoc, setDoc, onSnapshot, addDoc,
-  query, orderBy, writeBatch, getDocs, updateDoc, deleteDoc,
+  query, orderBy, where, writeBatch, getDocs, updateDoc, deleteDoc,
+  arrayUnion, arrayRemove,
 } from "firebase/firestore";
 
 // ─── VERSION ──────────────────────────────────────────────────────────────────
-const VERSION = "1.5.0";
+const VERSION = "2.0.0";
 
 // ─── GRUVBOX PALETTES ─────────────────────────────────────────────────────────
 const GV_DARK = {
@@ -33,17 +34,29 @@ const ThemeContext = createContext(GV_DARK);
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 
 const HALL_OF_FAME_DEFAULT = [
-  { number: "420",  label: "420 🌿",            points: 40 },
-  { number: "404",  label: "404 Not Found",      points: 40 },
-  { number: "666",  label: "The Beast",          points: 40 },
-  { number: "777",  label: "Lucky 7s",           points: 40 },
-  { number: "1337", label: "Leet",               points: 40 },
-  { number: "007",  label: "Bond",               points: 40 },
-  { number: "42",   label: "The Answer",         points: 40 },
-  { number: "69",   label: "Classic",            points: 40 },
-  { number: "911",  label: "Emergency",          points: 40 },
-  { number: "1234", label: "Too Easy",           points: 40 },
-  { number: "8008", label: "Calculator Classic", points: 40 },
+  { number: "420",  label: "420 🌿",              points: 40 },
+  { number: "404",  label: "404 Not Found",        points: 40 },
+  { number: "666",  label: "The Beast",            points: 40 },
+  { number: "777",  label: "Lucky 7s",             points: 40 },
+  { number: "1337", label: "Leet",                 points: 40 },
+  { number: "007",  label: "Bond",                 points: 40 },
+  { number: "42",   label: "The Answer",           points: 40 },
+  { number: "69",   label: "Classic",              points: 40 },
+  { number: "911",  label: "Emergency",            points: 40 },
+  { number: "1234", label: "Too Easy",             points: 40 },
+  { number: "8008", label: "Calculator Classic",   points: 40 },
+  { number: "88",   label: "88 MPH ⚡",            points: 40 },
+  { number: "1776", label: "Independence",         points: 40 },
+  { number: "314",  label: "Pi Day 🥧",            points: 40 },
+  { number: "808",  label: "808 Drum Machine 🥁",  points: 40 },
+  { number: "1969", label: "Moon Landing 🚀",      points: 40 },
+  { number: "13",   label: "Unlucky",              points: 40 },
+  { number: "21",   label: "Blackjack",            points: 40 },
+  { number: "100",  label: "Perfect Score",        points: 40 },
+  { number: "1984", label: "Big Brother 👁",       points: 40 },
+  { number: "360",  label: "Full Circle",          points: 40 },
+  { number: "5150", label: "Code 5150",            points: 40 },
+  { number: "2112", label: "Temples of Syrinx 🎸", points: 40 },
 ];
 
 const CATEGORIES = [
@@ -67,12 +80,39 @@ const COLOR_OPTIONS = [
 
 const REACTIONS = ["🔥","😂","🤯","👀","💯"];
 
+const CHANGELOG = [
+  {
+    version: "2.0.0",
+    entries: [
+      "Games system — join or create games with a unique code",
+      "Weekly periods — leaderboard resets every Monday at 4 AM CST",
+      "Hall of Champions now tracks Top Score 🏆 and Most Finds 📸 per period",
+      "Player profiles with custom emoji, color, and theme",
+      "Join or create a game anytime from your profile",
+    ],
+  },
+];
+
 const IMAGE_TTL_MS = 48 * 60 * 60 * 1000;
 
 // ─── PERIOD HELPERS ───────────────────────────────────────────────────────────
 
+function getISOWeekYear(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - day);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const week = Math.ceil(((d - yearStart) / 86400000 + 1) / 7);
+  return { year: d.getUTCFullYear(), week };
+}
+
 function getPeriodKey(date, mode) {
   const d = date || new Date();
+  if (mode === "weekly") {
+    const shifted = new Date(d.getTime() - 10 * 60 * 60 * 1000);
+    const { year, week } = getISOWeekYear(shifted);
+    return `${year}-W${String(week).padStart(2, "0")}`;
+  }
   const y = d.getFullYear();
   const m = d.getMonth() + 1;
   if (mode === "monthly") return `${y}-${String(m).padStart(2,"0")}`;
@@ -81,6 +121,18 @@ function getPeriodKey(date, mode) {
 }
 
 function getPeriodLabel(key, mode) {
+  if (mode === "weekly") {
+    const [yearStr, weekStr] = key.split("-W");
+    const year = parseInt(yearStr);
+    const week = parseInt(weekStr);
+    const jan4 = new Date(Date.UTC(year, 0, 4));
+    const jan4Day = jan4.getUTCDay() || 7;
+    const week1Mon = new Date(jan4.getTime() - (jan4Day - 1) * 86400000);
+    const monday = new Date(week1Mon.getTime() + (week - 1) * 7 * 86400000);
+    const sunday = new Date(monday.getTime() + 6 * 86400000);
+    const fmt = d => d.toLocaleDateString("en-US", { month:"short", day:"numeric" });
+    return `Week of ${fmt(monday)} – ${fmt(sunday)}`;
+  }
   if (mode === "monthly") {
     const [y, m] = key.split("-");
     return new Date(parseInt(y), parseInt(m) - 1, 1)
@@ -93,8 +145,15 @@ function getPeriodLabel(key, mode) {
 }
 
 function getPeriodResetDates(mode) {
+  if (mode === "weekly") return "Every Monday at 4:00 AM CST";
   if (mode === "monthly") return "1st of every month";
   return "Jan 1, Apr 1, Jul 1, Oct 1";
+}
+
+// ─── MISC HELPERS ─────────────────────────────────────────────────────────────
+
+function generateJoinCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
 }
 
 // ─── SCORING ENGINE ───────────────────────────────────────────────────────────
@@ -103,11 +162,17 @@ function extractDigits(raw) { return raw.replace(/\D/g, ""); }
 
 function scoreDigits(digits) {
   if (!digits || digits.length < 2) return { name: "No Pattern", points: 0 };
-  const counts = {};
-  for (const d of digits) counts[d] = (counts[d] || 0) + 1;
-  const vals = Object.values(counts).sort((a, b) => b - a);
 
-  if (vals[0] >= 5) return { name: "Five of a Kind 🎰", points: 100 };
+  // Build consecutive runs — e.g. "1011" → [{d:'1',n:1},{d:'0',n:1},{d:'1',n:2}]
+  const runs = [];
+  let i = 0;
+  while (i < digits.length) {
+    let j = i;
+    while (j < digits.length && digits[j] === digits[i]) j++;
+    runs.push({ d: digits[i], n: j - i });
+    i = j;
+  }
+  const maxRun = Math.max(...runs.map(r => r.n));
 
   const hasStraightRun = (d, runLen) => {
     for (let i = 0; i <= d.length - runLen; i++) {
@@ -121,13 +186,30 @@ function scoreDigits(digits) {
     }
     return false;
   };
+
+  if (maxRun >= 5) return { name: "Five of a Kind 🎰", points: 100 };
   if (hasStraightRun(digits, 5) || hasStraightRun(digits, 4))
     return { name: "Straight 📈", points: 80 };
-  if (vals[0] >= 4) return { name: "Four of a Kind 🔥", points: 60 };
-  if (vals[0] >= 3 && vals[1] >= 2) return { name: "Full House 🏠", points: 50 };
+  if (maxRun >= 4) return { name: "Four of a Kind 🔥", points: 60 };
+
+  // Palindrome: 5+ digits, reads the same forwards and backwards
+  if (digits.length >= 5 && digits === digits.split("").reverse().join(""))
+    return { name: "Palindrome 🪞", points: 60 };
+
+  // Full House: a consecutive run of 3 + a consecutive run of 2 (different digit)
+  const threeRun = runs.find(r => r.n >= 3);
+  if (threeRun && runs.some(r => r.d !== threeRun.d && r.n >= 2))
+    return { name: "Full House 🏠", points: 50 };
+
   if (hasStraightRun(digits, 3)) return { name: "Small Straight 📉", points: 40 };
-  if (vals[0] >= 3) return { name: "Three of a Kind ✨", points: 30 };
-  if (vals[0] >= 2 && vals[1] >= 2) return { name: "Two Pair 👀", points: 20 };
+  if (maxRun >= 3) return { name: "Three of a Kind ✨", points: 30 };
+
+  // Two Pair: two different digits each appearing 2+ times (count-based, position-independent)
+  const counts = {};
+  for (const d of digits) counts[d] = (counts[d] || 0) + 1;
+  const pairDigits = Object.entries(counts).filter(([,n]) => n >= 2);
+  if (pairDigits.length >= 2) return { name: "Two Pair 👀", points: 20 };
+
   return { name: "No Pattern", points: 0 };
 }
 
@@ -162,11 +244,9 @@ function checkHallOfFame(digits, hofList) {
   return null;
 }
 
-function isFirstOfDay(submissions, playerId) {
+function isFirstOfDay(submissions) {
   const today = new Date().toDateString();
-  return !submissions.some(
-    s => s.playerId === playerId && new Date(s.timestamp).toDateString() === today
-  );
+  return !submissions.some(s => new Date(s.timestamp).toDateString() === today);
 }
 
 function checkStreak(submissions, playerId) {
@@ -191,9 +271,13 @@ function checkStreak(submissions, playerId) {
   return true;
 }
 
-function hasPlayerSubmittedThisFind(submissions, playerId, raw) {
+function hasPlayerSubmittedThisFind(submissions, playerId, raw, periodKey, periodMode) {
   const digits = extractDigits(raw);
-  return submissions.some(s => s.playerId === playerId && extractDigits(s.raw) === digits);
+  return submissions.some(s =>
+    s.playerId === playerId &&
+    extractDigits(s.raw) === digits &&
+    getPeriodKey(new Date(s.timestamp), periodMode) === periodKey
+  );
 }
 
 function scoreSubmission(raw, category, playerId, submissions, birthdays, hofList) {
@@ -208,7 +292,7 @@ function scoreSubmission(raw, category, playerId, submissions, birthdays, hofLis
   const bday = checkBirthday(digits, birthdays);
   if (bday) { bonuses.push({ label: "🎂 Birthday Find!", points: 25 }); total += 25; }
 
-  if (base.points > 0 && isFirstOfDay(submissions, playerId)) {
+  if (base.points > 0 && isFirstOfDay(submissions)) {
     bonuses.push({ label: "🌅 First of the Day", points: 5 }); total += 5;
   }
 
@@ -569,26 +653,27 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
           <span style={{ color:color, fontWeight:700, fontSize:16 }}>{name || player?.name || "Player Name"}</span>
         </div>
 
-        {!isEdit && (
-          <div style={{ marginBottom:16 }}>
-            <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>NAME</label>
-            <input value={name} onChange={e => setName(e.target.value)}
-              placeholder="Enter name"
-              style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }} />
-          </div>
-        )}
+        <div style={{ marginBottom:16 }}>
+          <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)}
+            placeholder="Enter name"
+            style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }} />
+        </div>
 
         <div style={{ marginBottom:16 }}>
           <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>EMOJI</label>
-          <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
-            {EMOJI_OPTIONS.map(e => (
-              <button key={e} onClick={() => setEmoji(e)} style={{
-                width:36, height:36, borderRadius:8, fontSize:18, cursor:"pointer",
-                background: emoji===e ? `${GV.orangeB}33` : GV.bg,
-                border: `1px solid ${emoji===e ? GV.orangeB : GV.bg2}`,
-              }}>{e}</button>
-            ))}
-          </div>
+          <input
+            value={emoji}
+            onChange={e => {
+              const segs = typeof Intl !== "undefined" && Intl.Segmenter
+                ? [...new Intl.Segmenter().segment(e.target.value)]
+                : [...e.target.value];
+              const first = segs[0]?.segment ?? segs[0];
+              if (first) setEmoji(first);
+            }}
+            placeholder="tap to pick"
+            style={{ ...inputStyle, width:90, fontSize:24, textAlign:"center", boxSizing:"border-box" }}
+          />
         </div>
 
         <div style={{ marginBottom:16 }}>
@@ -601,6 +686,12 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
                 outline: color===c ? `2px solid ${c}` : "none",
               }} />
             ))}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:10, marginTop:10 }}>
+            <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2 }}>CUSTOM COLOR</label>
+            <input type="color" value={color} onChange={e => setColor(e.target.value)}
+              style={{ width:36, height:36, borderRadius:8, border:`1px solid ${GV.bg2}`,
+                background:"none", cursor:"pointer", padding:2 }} />
           </div>
         </div>
 
@@ -643,13 +734,14 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
 function RulesTab({ hofList }) {
   const GV = useContext(ThemeContext);
   const baseScores = [
-    { name:"Five of a Kind 🎰", pts:100, example:"1:11:11", desc:"All digits the same" },
-    { name:"Straight 📈",       pts:80,  example:"1:23:45", desc:"4 or 5 sequential digits (asc or desc)" },
-    { name:"Four of a Kind 🔥", pts:60,  example:"11:11",   desc:"Four matching digits" },
-    { name:"Full House 🏠",     pts:50,  example:"11:22:2", desc:"Three of one + two of another" },
-    { name:"Small Straight 📉", pts:40,  example:"1:23",    desc:"3 sequential digits (asc or desc)" },
-    { name:"Three of a Kind ✨",pts:30,  example:"2:22",    desc:"Three matching digits" },
-    { name:"Two Pair 👀",       pts:20,  example:"11:22",   desc:"Two sets of pairs" },
+    { name:"Five of a Kind 🎰", pts:100, example:"1:11:11", desc:"Five identical digits in a row" },
+    { name:"Straight 📈",       pts:80,  example:"1:23:45", desc:"4 or 5 sequential digits in order (asc or desc)" },
+    { name:"Four of a Kind 🔥", pts:60,  example:"11:11",   desc:"Four identical digits in a row" },
+    { name:"Palindrome 🪞",     pts:60,  example:"5:84:85", desc:"5+ digits that read the same forwards and backwards" },
+    { name:"Full House 🏠",     pts:50,  example:"11:22:2", desc:"Three consecutive of one + two consecutive of another" },
+    { name:"Small Straight 📉", pts:40,  example:"1:23",    desc:"3 sequential digits in order (asc or desc)" },
+    { name:"Three of a Kind ✨",pts:30,  example:"2:22",    desc:"Three identical digits in a row" },
+    { name:"Two Pair 👀",       pts:20,  example:"12:12",   desc:"Two different digits each appearing 2+ times" },
     { name:"No Pattern",        pts:0,   example:"1:37",    desc:"No matches or runs" },
   ];
   const bonuses = [
@@ -714,12 +806,20 @@ function RulesTab({ hofList }) {
       </div>
       <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:12 }}>VALIDITY</div>
       <div style={{ border:`1px solid ${GV.bg2}`, borderRadius:12, padding:"14px 16px",
-        color:GV.bg4, fontSize:12, lineHeight:1.8 }}>
+        color:GV.bg4, fontSize:12, lineHeight:1.8, marginBottom:24 }}>
         ✓ Real photo or screenshot required — no exceptions<br/>
         ✓ Numbers must appear naturally in the wild<br/>
         ✗ No staging (don't set your clock to 1:11)<br/>
         ✗ No submitting the same digit pattern twice<br/>
         ✓ Honor system — it's for fun
+      </div>
+      <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:12 }}>TERMS OF USE</div>
+      <div style={{ border:`1px solid ${GV.bg2}`, borderRadius:12, padding:"14px 16px",
+        color:GV.bg4, fontSize:12, lineHeight:1.8 }}>
+        Clocktzee is a private app for personal and family entertainment — not a commercial service.<br/><br/>
+        All photos and content you submit are <span style={{ color:GV.fg3 }}>your responsibility</span>. Only post content you have the right to share.<br/><br/>
+        The app owner is not liable for any content submitted by other players. Content may be removed at the app owner's discretion at any time without notice.<br/><br/>
+        This app is provided as-is, for entertainment only, with no warranties of any kind. Use is entirely voluntary and at your own risk.
       </div>
     </div>
   );
@@ -739,29 +839,52 @@ function ChampionsTab({ champions, players }) {
       </div>
     );
   }
+
+  const grouped = {};
+  for (const c of champions) {
+    if (!grouped[c.periodKey]) grouped[c.periodKey] = { label: c.periodLabel };
+    grouped[c.periodKey][c.type] = c;
+  }
+  const periods = Object.keys(grouped).sort((a,b) => b.localeCompare(a));
+
+  function ChampRow({ champ, icon, subLabel }) {
+    if (!champ) return null;
+    const player = players.find(p => p.id === champ.playerId) ||
+      { name: champ.playerName || "?", emoji: icon, color: GV_DARK.yellowB };
+    const isScore = champ.type === "topscore";
+    return (
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom: isScore ? 8 : 0,
+        paddingBottom: isScore ? 8 : 0, borderBottom: isScore ? `1px solid ${GV.bg0}` : "none" }}>
+        <span style={{ fontSize:20, width:28, textAlign:"center" }}>{icon}</span>
+        <div style={{ width:30, height:30, borderRadius:"50%", background:player.color+"33",
+          border:`2px solid ${player.color}`, display:"flex", alignItems:"center",
+          justifyContent:"center", fontSize:14, flexShrink:0 }}>{player.emoji}</div>
+        <div style={{ flex:1 }}>
+          <div style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>{player.name}</div>
+          <div style={{ color:GV.fg3, fontSize:10 }}>{subLabel}</div>
+        </div>
+        <div style={{ fontFamily:"'Courier Prime',monospace", fontWeight:900,
+          fontSize:18, color: isScore ? GV.yellowB : GV.blueB }}>
+          {isScore ? `${champ.score} pts` : `${champ.score} finds`}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
       <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>HALL OF CHAMPIONS</div>
-      {champions.map((c, i) => {
-        const player = players.find(p => p.id === c.playerId) ||
-          { name: c.playerName || "?", emoji: "🏆", color: GV_DARK.yellowB };
+      {periods.map((key, pi) => {
+        const { label, topscore, mostfinds } = grouped[key];
         return (
-          <div key={i} style={{ display:"flex", alignItems:"center", gap:12,
-            background: i===0 ? `${GV.yellowB}11` : GV.bg1,
-            border:`1px solid ${i===0 ? GV.yellowB+"44" : GV.bg2}`,
+          <div key={key} style={{ background: pi===0 ? `${GV.yellowB}08` : GV.bg1,
+            border:`1px solid ${pi===0 ? GV.yellowB+"44" : GV.bg2}`,
             borderRadius:12, padding:"14px 16px", marginBottom:10 }}>
-            <div style={{ fontSize:24, width:32, textAlign:"center" }}>
-              {i===0?"🥇":i===1?"🥈":i===2?"🥉":"🏅"}
+            <div style={{ color:pi===0?GV.yellowB:GV.fg3, fontSize:10, letterSpacing:3, marginBottom:12 }}>
+              {(label||key).toUpperCase()}
             </div>
-            <div style={{ width:36, height:36, borderRadius:"50%", background:player.color+"33",
-              border:`2px solid ${player.color}`, display:"flex", alignItems:"center",
-              justifyContent:"center", fontSize:18, flexShrink:0 }}>{player.emoji}</div>
-            <div style={{ flex:1 }}>
-              <div style={{ color:GV.fg, fontWeight:700, fontSize:15 }}>{player.name}</div>
-              <div style={{ color:GV.fg3, fontSize:11, marginTop:2 }}>{c.periodLabel}</div>
-            </div>
-            <div style={{ fontFamily:"'Courier Prime',monospace", fontWeight:900,
-              fontSize:22, color: i===0 ? GV.yellowB : GV.fg3 }}>{c.score}</div>
+            <ChampRow champ={topscore}  icon="🏆" subLabel="Top Score" />
+            <ChampRow champ={mostfinds} icon="📸" subLabel="Most Finds" />
           </div>
         );
       })}
@@ -818,7 +941,7 @@ function PlayerSelectScreen({ players, onSelect, onAddPlayer }) {
 
 // ─── PROFILE SHEET ────────────────────────────────────────────────────────────
 
-function ProfileSheet({ player, submissions, onClose, onEdit, onLogout, onThemeToggle }) {
+function ProfileSheet({ player, submissions, games, activeGame, onClose, onEdit, onLogout, onThemeToggle, onSwitchGame, onJoinGame, onCreateGame }) {
   const GV = useContext(ThemeContext);
   const subs = submissions.filter(s => s.playerId === player.id);
   const total = subs.reduce((a,s) => a+s.score, 0);
@@ -831,7 +954,7 @@ function ProfileSheet({ player, submissions, onClose, onEdit, onLogout, onThemeT
       <div onClick={e => e.stopPropagation()} style={{
         background:GV.bg1, border:`1px solid ${player.color}55`,
         borderRadius:"16px 16px 0 0", width:"100%", maxWidth:480,
-        padding:"24px 20px 40px",
+        padding:"24px 20px 40px", maxHeight:"85vh", overflowY:"auto",
       }}>
         <div style={{ display:"flex", alignItems:"center", gap:14, marginBottom:20 }}>
           <div style={{ width:52, height:52, borderRadius:"50%", background:player.color+"33",
@@ -856,6 +979,41 @@ function ProfileSheet({ player, submissions, onClose, onEdit, onLogout, onThemeT
           ))}
         </div>
 
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:GV.fg3, fontSize:10, letterSpacing:2, marginBottom:10 }}>MY GAMES</div>
+          {games.map(g => (
+            <div key={g.id} style={{ display:"flex", alignItems:"center", gap:10,
+              padding:"10px 14px", borderRadius:10, marginBottom:6,
+              background: g.id===activeGame?.id ? `${GV.orangeB}18` : GV.bg,
+              border:`1px solid ${g.id===activeGame?.id ? GV.orangeB+"66" : GV.bg2}` }}>
+              <span style={{ color:GV.fg, flex:1, fontSize:13 }}>🎮 {g.name}</span>
+              {g.id===activeGame?.id
+                ? <span style={{ color:GV.orangeB, fontSize:11, letterSpacing:1 }}>ACTIVE</span>
+                : <button onClick={() => { onSwitchGame(g); onClose(); }}
+                    style={{ padding:"5px 10px", background:"transparent",
+                      border:`1px solid ${GV.bg2}`, borderRadius:8,
+                      color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                    Switch
+                  </button>
+              }
+            </div>
+          ))}
+          <div style={{ display:"flex", gap:8, marginTop:8 }}>
+            <button onClick={() => { onJoinGame(); onClose(); }} style={{
+              flex:1, padding:"9px", background:"transparent",
+              border:`1px solid ${GV.blueB}`, borderRadius:10, color:GV.blueB,
+              fontSize:12, cursor:"pointer", fontFamily:"inherit",
+            }}>Join a Game</button>
+            {player.isAdmin && (
+              <button onClick={() => { onCreateGame(); onClose(); }} style={{
+                flex:1, padding:"9px", background:"transparent",
+                border:`1px solid ${GV.orangeB}`, borderRadius:10, color:GV.orangeB,
+                fontSize:12, cursor:"pointer", fontFamily:"inherit",
+              }}>+ Create Game</button>
+            )}
+          </div>
+        </div>
+
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           <button onClick={onEdit} style={{ padding:"12px", background:"transparent",
             border:`1px solid ${GV.bg2}`, borderRadius:12, color:GV.fg,
@@ -878,6 +1036,251 @@ function ProfileSheet({ player, submissions, onClose, onEdit, onLogout, onThemeT
   );
 }
 
+// ─── WELCOME / TERMS MODAL ───────────────────────────────────────────────────
+
+function WelcomeModal({ isFirstTime, onAccept }) {
+  const GV = useContext(ThemeContext);
+  const latest = CHANGELOG[0];
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)",
+      zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center",
+      padding:"24px 16px", overflowY:"auto", fontFamily:"'Courier Prime',monospace" }}>
+      <div style={{ background:GV.bg1, border:`1px solid ${GV.bg2}`,
+        borderRadius:16, width:"100%", maxWidth:460, padding:"28px 24px" }}>
+
+        <div style={{ textAlign:"center", marginBottom:24 }}>
+          <div style={{ display:"flex", alignItems:"baseline", gap:8, justifyContent:"center", marginBottom:8 }}>
+            <span style={{ fontSize:28, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
+            <span style={{ fontSize:28, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
+            <span style={{ fontSize:20 }}>🎲</span>
+          </div>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3 }}>
+            {isFirstTime ? "WELCOME" : `WHAT'S NEW IN v${latest.version}`}
+          </div>
+        </div>
+
+        {/* What's New */}
+        <div style={{ background:GV.bg, border:`1px solid ${GV.bg2}`,
+          borderRadius:12, padding:"14px 16px", marginBottom: isFirstTime ? 20 : 24 }}>
+          <div style={{ color:GV.orangeB, fontSize:10, letterSpacing:3, marginBottom:12 }}>
+            {isFirstTime ? `WHAT'S NEW IN v${latest.version}` : "UPDATES"}
+          </div>
+          {latest.entries.map((e, i) => (
+            <div key={i} style={{ display:"flex", gap:10, marginBottom:8,
+              color:GV.fg2, fontSize:13, lineHeight:1.5 }}>
+              <span style={{ color:GV.orangeB, flexShrink:0 }}>›</span>
+              <span>{e}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Terms — first time only */}
+        {isFirstTime && (
+          <div style={{ background:GV.bg, border:`1px solid ${GV.bg2}`,
+            borderRadius:12, padding:"14px 16px", marginBottom:24 }}>
+            <div style={{ color:GV.fg3, fontSize:10, letterSpacing:3, marginBottom:12 }}>TERMS OF USE</div>
+            <div style={{ color:GV.fg3, fontSize:12, lineHeight:1.8 }}>
+              Clocktzee is a private app for personal and family entertainment — not a commercial service.<br /><br />
+              All photos and content you submit are <strong style={{ color:GV.fg2 }}>your responsibility</strong>. Only post content you have the right to share.<br /><br />
+              The app owner is not liable for any content submitted by other players. Content may be removed at the app owner's discretion at any time without notice.<br /><br />
+              This app is provided as-is, for entertainment only, with no warranties of any kind. Use is entirely voluntary and at your own risk.
+            </div>
+          </div>
+        )}
+
+        <button onClick={onAccept} style={{
+          width:"100%", padding:"14px",
+          background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+          border:"none", borderRadius:12, color:GV.bg0,
+          fontSize:14, fontWeight:900, letterSpacing:2, cursor:"pointer", fontFamily:"inherit",
+        }}>
+          {isFirstTime ? "I UNDERSTAND — LET ME PLAY" : "GOT IT"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── GAME SELECT SCREEN ───────────────────────────────────────────────────────
+
+function GameSelectScreen({ player, games, gamesLoaded, onSelect, onCreateGame, onJoinGame, onSwitchPlayer }) {
+  const GV = useContext(ThemeContext);
+  return (
+    <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", padding:"24px 16px",
+      fontFamily:"'Courier Prime',monospace" }}>
+      <div style={{ marginBottom:32, textAlign:"center" }}>
+        <div style={{ display:"flex", alignItems:"baseline", gap:10, justifyContent:"center", marginBottom:8 }}>
+          <span style={{ fontSize:34, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
+          <span style={{ fontSize:34, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
+          <span style={{ fontSize:24, marginLeft:4 }}>🎲</span>
+        </div>
+        <div style={{ color:GV.fg3, fontSize:12, letterSpacing:2, marginBottom:4 }}>PLAYING AS</div>
+        <div style={{ display:"flex", alignItems:"center", gap:8, justifyContent:"center" }}>
+          <div style={{ width:28, height:28, borderRadius:"50%", background:player.color+"33",
+            border:`2px solid ${player.color}`, display:"flex", alignItems:"center",
+            justifyContent:"center", fontSize:14 }}>{player.emoji}</div>
+          <span style={{ color:player.color, fontWeight:700, fontSize:16 }}>{player.name}</span>
+        </div>
+      </div>
+
+      {!gamesLoaded && (
+        <div style={{ color:GV.fg3, fontSize:13, marginBottom:24 }}>Loading games…</div>
+      )}
+
+      {gamesLoaded && games.length > 0 && (
+        <div style={{ width:"100%", maxWidth:400, marginBottom:24 }}>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:12 }}>SELECT GAME</div>
+          {games.map(g => (
+            <button key={g.id} onClick={() => onSelect(g)} style={{
+              width:"100%", marginBottom:10, padding:"16px 20px",
+              background:GV.bg1, border:`2px solid ${GV.bg2}`,
+              borderRadius:14, cursor:"pointer", display:"flex", alignItems:"center",
+              gap:14, fontFamily:"inherit", transition:"border-color 0.15s",
+            }}
+              onMouseOver={e => e.currentTarget.style.borderColor=GV.orangeB}
+              onMouseOut={e => e.currentTarget.style.borderColor=GV.bg2}
+            >
+              <span style={{ fontSize:24 }}>🎮</span>
+              <div style={{ flex:1, textAlign:"left" }}>
+                <div style={{ color:GV.fg, fontWeight:700, fontSize:15 }}>{g.name}</div>
+                <div style={{ color:GV.fg3, fontSize:11, marginTop:2 }}>
+                  {g.members?.length || 0} player{g.members?.length !== 1 ? "s" : ""} · {g.periodMode || "weekly"}
+                </div>
+              </div>
+              <span style={{ color:GV.orangeB, fontSize:18 }}>›</span>
+            </button>
+          ))}
+        </div>
+      )}
+
+      {gamesLoaded && games.length === 0 && (
+        <div style={{ color:GV.bg3, fontSize:13, marginBottom:24, textAlign:"center" }}>
+          You're not in any games yet.
+        </div>
+      )}
+
+      <div style={{ display:"flex", flexDirection:"column", gap:10, width:"100%", maxWidth:400 }}>
+        <button onClick={onJoinGame} style={{
+          padding:"13px", background:"transparent",
+          border:`1px solid ${GV.blueB}`, borderRadius:12, color:GV.blueB,
+          fontSize:13, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+        }}>Join a Game →</button>
+        {player.isAdmin && (
+          <button onClick={onCreateGame} style={{
+            padding:"13px", background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+            border:"none", borderRadius:12, color:GV.bg0,
+            fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+          }}>+ Create New Game</button>
+        )}
+        <button onClick={onSwitchPlayer} style={{
+          padding:"10px", background:"transparent",
+          border:"none", color:GV.bg3,
+          fontSize:12, cursor:"pointer", fontFamily:"inherit",
+        }}>Switch Player</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── CREATE GAME MODAL ────────────────────────────────────────────────────────
+
+function CreateGameModal({ onSave, onClose, inputStyle }) {
+  const GV = useContext(ThemeContext);
+  const [name, setName] = useState("");
+  const [mode, setMode] = useState("weekly");
+  const [saving, setSaving] = useState(false);
+
+  async function handleCreate() {
+    if (!name.trim()) return;
+    setSaving(true);
+    await onSave({ name: name.trim(), periodMode: mode, joinCode: generateJoinCode() });
+    setSaving(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.88)",
+      zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:GV.bg1,
+        border:`1px solid ${GV.bg2}`, borderRadius:16, padding:24, width:"100%", maxWidth:400 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <span style={{ color:GV.fg, fontWeight:700, fontSize:16 }}>Create New Game</span>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:GV.fg3, fontSize:20, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ marginBottom:16 }}>
+          <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>GAME NAME</label>
+          <input value={name} onChange={e => setName(e.target.value)}
+            placeholder="e.g. GrandPappy Family"
+            style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }} />
+        </div>
+        <div style={{ marginBottom:24 }}>
+          <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>RESET PERIOD</label>
+          <select value={mode} onChange={e => setMode(e.target.value)}
+            style={{ ...inputStyle, width:"100%", cursor:"pointer" }}>
+            <option value="weekly">Weekly (Mon 4 AM CST)</option>
+            <option value="monthly">Monthly (1st of month)</option>
+            <option value="quarterly">Quarterly (Jan/Apr/Jul/Oct)</option>
+          </select>
+        </div>
+        <button onClick={handleCreate} disabled={saving || !name.trim()} style={{
+          width:"100%", padding:"13px",
+          background: saving || !name.trim() ? GV.bg2 : `linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+          border:"none", borderRadius:12, color:GV.bg0, fontSize:14,
+          fontWeight:900, letterSpacing:2, cursor: saving ? "not-allowed" : "pointer", fontFamily:"inherit",
+        }}>
+          {saving ? "CREATING…" : "CREATE GAME"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── JOIN GAME MODAL ──────────────────────────────────────────────────────────
+
+function JoinGameModal({ onJoin, onClose, inputStyle }) {
+  const GV = useContext(ThemeContext);
+  const [code, setCode] = useState("");
+  const [error, setError] = useState("");
+  const [joining, setJoining] = useState(false);
+
+  async function handleJoin() {
+    if (!code.trim()) return;
+    setError(""); setJoining(true);
+    const err = await onJoin(code.trim().toUpperCase());
+    if (err) setError(err);
+    setJoining(false);
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.88)",
+      zIndex:300, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:GV.bg1,
+        border:`1px solid ${GV.bg2}`, borderRadius:16, padding:24, width:"100%", maxWidth:400 }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:20 }}>
+          <span style={{ color:GV.fg, fontWeight:700, fontSize:16 }}>Join a Game</span>
+          <button onClick={onClose} style={{ background:"none", border:"none", color:GV.fg3, fontSize:20, cursor:"pointer" }}>✕</button>
+        </div>
+        <div style={{ marginBottom:24 }}>
+          <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>JOIN CODE</label>
+          <input value={code} onChange={e => setCode(e.target.value.toUpperCase())}
+            placeholder="e.g. FAMILY"
+            style={{ ...inputStyle, width:"100%", boxSizing:"border-box", letterSpacing:4, fontSize:18, textAlign:"center" }} />
+          {error && <div style={{ color:GV.redB, fontSize:12, marginTop:6 }}>{error}</div>}
+        </div>
+        <button onClick={handleJoin} disabled={joining || !code.trim()} style={{
+          width:"100%", padding:"13px",
+          background: joining || !code.trim() ? GV.bg2 : `linear-gradient(135deg,${GV.blue},${GV.blueB})`,
+          border:"none", borderRadius:12, color:GV.bg0, fontSize:14,
+          fontWeight:900, letterSpacing:2, cursor: joining ? "not-allowed" : "pointer", fontFamily:"inherit",
+        }}>
+          {joining ? "JOINING…" : "JOIN GAME"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
@@ -885,10 +1288,20 @@ export default function App() {
   const [players,      setPlayers]      = useState([]);
   const [submissions,  setSubmissions]  = useState([]);
   const [hofList,      setHofList]      = useState(HALL_OF_FAME_DEFAULT);
-  const [periodMode,   setPeriodMode]   = useState("monthly");
   const [champions,    setChampions]    = useState([]);
   const [loaded,       setLoaded]       = useState(false);
   const [playersLoaded,setPlayersLoaded]= useState(false);
+
+  const [games,        setGames]        = useState([]);
+  const [gamesLoaded,  setGamesLoaded]  = useState(false);
+  const [activeGame,   setActiveGame]   = useState(null);
+  const [showCreateGame, setShowCreateGame] = useState(false);
+  const [showJoinGame,   setShowJoinGame]   = useState(false);
+  const [editingGame,    setEditingGame]    = useState(null);
+  const [selectedGameIds, setSelectedGameIds] = useState([]);
+  const gamesFirstLoad = useRef(true);
+  const [showWelcomeModal, setShowWelcomeModal] = useState(false);
+  const [isFirstTimeUser,  setIsFirstTimeUser]  = useState(false);
 
   const [currentPlayer,       setCurrentPlayer]       = useState(null);
   const [showProfileSheet,    setShowProfileSheet]     = useState(false);
@@ -910,11 +1323,29 @@ export default function App() {
   const [editingPlayer, setEditingPlayer] = useState(null);
   const [pendingWinner, setPendingWinner] = useState(null);
 
-  const [newHof,       setNewHof]       = useState("");
-  const [newHofLabel,  setNewHofLabel]  = useState("");
+  const [newHof,        setNewHof]        = useState("");
+  const [newHofLabel,   setNewHofLabel]   = useState("");
+  const [hofEditingIdx, setHofEditingIdx] = useState(null);
+  const [hofEditNumber, setHofEditNumber] = useState("");
+  const [hofEditLabel,  setHofEditLabel]  = useState("");
   const [adminSection, setAdminSection] = useState("players");
 
   const GV = currentPlayer?.theme === "light" ? GV_LIGHT : GV_DARK;
+
+  // ── Welcome modal check ──
+  useEffect(() => {
+    if (!loaded || !playersLoaded) return;
+    const accepted = localStorage.getItem("ctz_terms_accepted");
+    if (!accepted || accepted !== VERSION) {
+      setIsFirstTimeUser(!accepted);
+      setShowWelcomeModal(true);
+    }
+  }, [loaded, playersLoaded]);
+
+  function handleAcceptTerms() {
+    localStorage.setItem("ctz_terms_accepted", VERSION);
+    setShowWelcomeModal(false);
+  }
 
   // ── Load players via onSnapshot ──
   useEffect(() => {
@@ -945,10 +1376,8 @@ export default function App() {
   // ── Load settings ──
   useEffect(() => {
     (async () => {
-      const h  = await fsGet("settings/hof",        HALL_OF_FAME_DEFAULT);
-      const pm = await fsGet("settings/periodMode", "monthly");
-      const ch = await fsGet("settings/champions",  []);
-      setHofList(h); setPeriodMode(pm); setChampions(ch);
+      const h = await fsGet("settings/hof", HALL_OF_FAME_DEFAULT);
+      setHofList(h);
       setLoaded(true);
     })();
   }, []);
@@ -968,14 +1397,50 @@ export default function App() {
     return unsub;
   }, []);
 
-  // ── Persist settings ──
-  const [hofDirty,        setHofDirty]        = useState(false);
-  const [periodModeDirty, setPeriodModeDirty] = useState(false);
-  const [championsDirty,  setChampionsDirty]  = useState(false);
+  // ── Persist HOF ──
+  const [hofDirty, setHofDirty] = useState(false);
+  useEffect(() => { if (hofDirty) { fsSet("settings/hof", hofList); setHofDirty(false); } }, [hofList]);
 
-  useEffect(() => { if (hofDirty)        { fsSet("settings/hof",        hofList);    setHofDirty(false);        } }, [hofList]);
-  useEffect(() => { if (periodModeDirty) { fsSet("settings/periodMode", periodMode); setPeriodModeDirty(false); } }, [periodMode]);
-  useEffect(() => { if (championsDirty)  { fsSet("settings/champions",  champions);  setChampionsDirty(false);  } }, [champions]);
+  // ── Games subscription ──
+  useEffect(() => {
+    if (!currentPlayer) return;
+    gamesFirstLoad.current = true;
+    const q = query(collection(db, "games"), where("members", "array-contains", currentPlayer.id));
+    const unsub = onSnapshot(q, snap => {
+      const gs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setGames(gs);
+      setGamesLoaded(true);
+      if (gamesFirstLoad.current) {
+        gamesFirstLoad.current = false;
+        const savedId = localStorage.getItem("ctz_active_game");
+        const saved = savedId ? gs.find(g => g.id === savedId) : null;
+        if (saved) {
+          setActiveGame(saved);
+        } else if (gs.length === 1) {
+          setActiveGame(gs[0]);
+          localStorage.setItem("ctz_active_game", gs[0].id);
+        }
+      } else {
+        setActiveGame(prev => prev ? (gs.find(g => g.id === prev.id) || prev) : prev);
+      }
+    });
+    return () => { unsub(); gamesFirstLoad.current = true; setGamesLoaded(false); };
+  }, [currentPlayer?.id]);
+
+  // ── Champions subscription ──
+  useEffect(() => {
+    if (!activeGame) return;
+    const q = query(collection(db, "champions"), where("gameId", "==", activeGame.id));
+    const unsub = onSnapshot(q, snap => {
+      setChampions(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [activeGame?.id]);
+
+  // ── Default selectedGameIds to all joined games ──
+  useEffect(() => {
+    if (games.length > 0) setSelectedGameIds(games.map(g => g.id));
+  }, [games.length]);
 
   // ── Birthdays derived from player docs ──
   const birthdays = Object.fromEntries(
@@ -984,37 +1449,41 @@ export default function App() {
 
   // ── Period reset check ──
   useEffect(() => {
-    if (!loaded || submissions.length === 0) return;
-    const currentKey = getPeriodKey(new Date(), periodMode);
-    const lastResetKey = localStorage.getItem("ctz_last_period") || currentKey;
-    if (lastResetKey !== currentKey) {
-      const lastSubs = submissions.filter(s => {
-        const sk = getPeriodKey(new Date(s.timestamp), periodMode);
-        return sk === lastResetKey;
-      });
-      if (lastSubs.length > 0) {
-        const scores = {};
-        lastSubs.forEach(s => { scores[s.playerId] = (scores[s.playerId] || 0) + s.score; });
-        const winnerId = Object.entries(scores).sort((a,b) => b[1]-a[1])[0][0];
-        const winnerPlayer = players.find(p => p.id === winnerId) ||
-          { name: winnerId, emoji: "🏆", color: GV_DARK.yellowB };
-        const winnerEntry = {
-          playerId: winnerId,
-          playerName: winnerPlayer.name,
-          score: scores[winnerId],
-          periodLabel: getPeriodLabel(lastResetKey, periodMode),
-          periodKey: lastResetKey,
-        };
-        setChampions(prev => [winnerEntry, ...prev].slice(0, 20));
-        setChampionsDirty(true);
-        setPendingWinner({ ...winnerPlayer, total: scores[winnerId],
-          periodLabel: getPeriodLabel(lastResetKey, periodMode) });
-      }
-      localStorage.setItem("ctz_last_period", currentKey);
-    } else {
-      localStorage.setItem("ctz_last_period", currentKey);
-    }
-  }, [loaded, periodMode]);
+    if (!loaded || !activeGame || submissions.length === 0) return;
+    const mode = activeGame.periodMode || "weekly";
+    const currentKey = getPeriodKey(new Date(), mode);
+    const lsKey = `ctz_last_period_${activeGame.id}`;
+    const lastResetKey = localStorage.getItem(lsKey) || currentKey;
+    localStorage.setItem(lsKey, currentKey);
+    if (lastResetKey === currentKey) return;
+
+    const lastSubs = submissions.filter(s =>
+      s.gameIds?.includes(activeGame.id) &&
+      getPeriodKey(new Date(s.timestamp), mode) === lastResetKey
+    );
+    if (lastSubs.length === 0) return;
+
+    const scores = {}; const finds = {};
+    lastSubs.forEach(s => {
+      scores[s.playerId] = (scores[s.playerId] || 0) + s.score;
+      finds[s.playerId]  = (finds[s.playerId]  || 0) + 1;
+    });
+    const [[topId, topScore]] = Object.entries(scores).sort((a,b) => b[1]-a[1]);
+    const [[mfId, mfCount]]   = Object.entries(finds).sort((a,b) => b[1]-a[1]);
+    const topPlayer = players.find(p => p.id === topId) || { name: topId, emoji:"🏆", color:GV_DARK.yellowB };
+    const mfPlayer  = players.find(p => p.id === mfId)  || { name: mfId,  emoji:"📸", color:GV_DARK.blueB  };
+    const periodLabel = getPeriodLabel(lastResetKey, mode);
+
+    setDoc(doc(db, "champions", `${activeGame.id}_${lastResetKey}_topscore`), {
+      gameId: activeGame.id, periodKey: lastResetKey, periodLabel,
+      type: "topscore", playerId: topId, playerName: topPlayer.name, score: topScore,
+    });
+    setDoc(doc(db, "champions", `${activeGame.id}_${lastResetKey}_mostfinds`), {
+      gameId: activeGame.id, periodKey: lastResetKey, periodLabel,
+      type: "mostfinds", playerId: mfId, playerName: mfPlayer.name, score: mfCount,
+    });
+    setPendingWinner({ ...topPlayer, total: topScore, periodLabel });
+  }, [loaded, activeGame?.id, activeGame?.periodMode]);
 
   // ── Score preview ──
   useEffect(() => {
@@ -1050,8 +1519,8 @@ export default function App() {
     setSubmitError("");
     if (!rawInput.trim()) { setSubmitError("Enter the number you found."); return; }
     if (!imageFile)       { setSubmitError("Attach a proof photo — pic or it didn't happen! 📷"); return; }
-    if (hasPlayerSubmittedThisFind(submissions, currentPlayer.id, rawInput)) {
-      setSubmitError("You already submitted this find!"); return;
+    if (hasPlayerSubmittedThisFind(submissions, currentPlayer.id, rawInput, currentPeriodKey, periodMode)) {
+      setSubmitError("You already submitted this find this period!"); return;
     }
     setSubmitting(true);
     try {
@@ -1071,6 +1540,7 @@ export default function App() {
         raw: rawInput.trim(), category: category || null,
         note: note.trim(), score: score.total, scoreDetail: score,
         hasImage: true, imageData, reactions: {},
+        gameIds: selectedGameIds.length > 0 ? selectedGameIds : (activeGame ? [activeGame.id] : []),
         timestamp: new Date().toISOString(),
       });
       setRawInput(""); setNote(""); setCategory(""); setPreview(null); clearImage();
@@ -1089,8 +1559,8 @@ export default function App() {
     setShowAddPlayer(false);
   }
 
-  async function handleEditPlayer(playerId, { emoji, color, birthday }) {
-    await updateDoc(doc(db, "players", playerId), { emoji, color, birthday });
+  async function handleEditPlayer(playerId, { name, emoji, color, birthday }) {
+    await updateDoc(doc(db, "players", playerId), { name, emoji, color, birthday });
     setEditingPlayer(null);
     setEditingCurrentPlayer(false);
   }
@@ -1119,6 +1589,44 @@ export default function App() {
     catch(e) { console.error(e); }
   }
 
+  function handleSelectGame(game) {
+    setActiveGame(game);
+    localStorage.setItem("ctz_active_game", game.id);
+    setTab("board");
+  }
+
+  async function handleCreateGame({ name, periodMode, joinCode }) {
+    const id = name.toLowerCase().replace(/\s+/g,"_") + "_" + Date.now();
+    await setDoc(doc(db, "games", id), {
+      id, name, periodMode, joinCode,
+      members: [currentPlayer.id],
+      createdBy: currentPlayer.id,
+      createdAt: new Date().toISOString(),
+      globalOptIn: [],
+    });
+    setShowCreateGame(false);
+  }
+
+  async function handleJoinGame(code) {
+    const snap = await getDocs(query(collection(db, "games"), where("joinCode", "==", code)));
+    if (snap.empty) return "Game not found. Check your join code.";
+    const gameDoc = snap.docs[0];
+    const game = { id: gameDoc.id, ...gameDoc.data() };
+    if (game.members?.includes(currentPlayer.id)) return "You're already in this game!";
+    await updateDoc(doc(db, "games", game.id), { members: arrayUnion(currentPlayer.id) });
+    setShowJoinGame(false);
+    return null;
+  }
+
+  async function handleUpdateGame(gameId, updates) {
+    await updateDoc(doc(db, "games", gameId), updates);
+    setEditingGame(null);
+  }
+
+  async function handleToggleAdmin(playerId, current) {
+    await updateDoc(doc(db, "players", playerId), { isAdmin: !current });
+  }
+
   function addHof() {
     if (!newHof.trim()) return;
     setHofList(prev => [...prev, { number: newHof.trim(),
@@ -1135,16 +1643,26 @@ export default function App() {
     await batch.commit();
   }
 
-  const leaderboard = players.map(p => {
-    const subs = submissions.filter(s => s.playerId === p.id);
-    const hasStreak = checkStreak(submissions, p.id);
-    return { ...p,
-      total: subs.reduce((a,s) => a+s.score, 0),
-      count: subs.length,
-      best:  subs.length ? Math.max(...subs.map(s => s.score)) : 0,
-      hasStreak,
-    };
-  }).sort((a,b) => b.total - a.total);
+  const periodMode = activeGame?.periodMode || "weekly";
+  const currentPeriodKey = activeGame ? getPeriodKey(new Date(), periodMode) : null;
+  const gamePeriodSubs = activeGame
+    ? submissions.filter(s =>
+        s.gameIds?.includes(activeGame.id) &&
+        getPeriodKey(new Date(s.timestamp), periodMode) === currentPeriodKey
+      )
+    : [];
+
+  const leaderboard = players
+    .filter(p => activeGame?.members?.includes(p.id))
+    .map(p => {
+      const subs = gamePeriodSubs.filter(s => s.playerId === p.id);
+      return { ...p,
+        total: subs.reduce((a,s) => a+s.score, 0),
+        count: subs.length,
+        best:  subs.length ? Math.max(...subs.map(s => s.score)) : 0,
+        hasStreak: checkStreak(submissions, p.id),
+      };
+    }).sort((a,b) => b.total - a.total);
 
   const S = {
     label:  { color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 },
@@ -1165,6 +1683,16 @@ export default function App() {
     </div>
   );
 
+  const darkInput = { background:GV_DARK.bg0, border:`1px solid ${GV_DARK.bg2}`, borderRadius:10,
+    padding:"12px 14px", color:GV_DARK.fg, fontSize:13, fontFamily:"inherit",
+    outline:"none", boxSizing:"border-box" };
+
+  if (showWelcomeModal) return (
+    <ThemeContext.Provider value={GV}>
+      <WelcomeModal isFirstTime={isFirstTimeUser} onAccept={handleAcceptTerms} />
+    </ThemeContext.Provider>
+  );
+
   if (!currentPlayer) return (
     <ThemeContext.Provider value={GV_DARK}>
       <PlayerSelectScreen players={players} onSelect={handleSelectPlayer} onAddPlayer={() => setShowAddPlayer(true)} />
@@ -1173,11 +1701,27 @@ export default function App() {
           player={null} birthday={null}
           onSave={handleAddPlayer} onRemove={null}
           onClose={() => setShowAddPlayer(false)}
-          inputStyle={{ background:GV_DARK.bg0, border:`1px solid ${GV_DARK.bg2}`, borderRadius:10,
-            padding:"12px 14px", color:GV_DARK.fg, fontSize:13, fontFamily:"inherit",
-            outline:"none", boxSizing:"border-box" }}
+          inputStyle={darkInput}
           isEdit={false}
         />
+      )}
+    </ThemeContext.Provider>
+  );
+
+  if (!activeGame) return (
+    <ThemeContext.Provider value={GV}>
+      <GameSelectScreen
+        player={currentPlayer} games={games} gamesLoaded={gamesLoaded}
+        onSelect={handleSelectGame}
+        onCreateGame={() => setShowCreateGame(true)}
+        onJoinGame={() => setShowJoinGame(true)}
+        onSwitchPlayer={handleLogout}
+      />
+      {showCreateGame && (
+        <CreateGameModal onSave={handleCreateGame} onClose={() => setShowCreateGame(false)} inputStyle={darkInput} />
+      )}
+      {showJoinGame && (
+        <JoinGameModal onJoin={handleJoinGame} onClose={() => setShowJoinGame(false)} inputStyle={darkInput} />
       )}
     </ThemeContext.Provider>
   );
@@ -1216,10 +1760,14 @@ export default function App() {
         {showProfileSheet && (
           <ProfileSheet
             player={currentPlayer} submissions={submissions}
+            games={games} activeGame={activeGame}
             onClose={() => setShowProfileSheet(false)}
             onEdit={() => { setEditingCurrentPlayer(true); setShowProfileSheet(false); }}
             onLogout={handleLogout}
             onThemeToggle={handleThemeToggle}
+            onSwitchGame={handleSelectGame}
+            onJoinGame={() => setShowJoinGame(true)}
+            onCreateGame={() => setShowCreateGame(true)}
           />
         )}
         {editingCurrentPlayer && (
@@ -1246,6 +1794,12 @@ export default function App() {
             onClose={() => setEditingPlayer(null)}
             inputStyle={S.input} isEdit
           />
+        )}
+        {showCreateGame && (
+          <CreateGameModal onSave={handleCreateGame} onClose={() => setShowCreateGame(false)} inputStyle={S.input} />
+        )}
+        {showJoinGame && (
+          <JoinGameModal onJoin={handleJoinGame} onClose={() => setShowJoinGame(false)} inputStyle={S.input} />
         )}
 
         {/* Header */}
@@ -1286,8 +1840,11 @@ export default function App() {
           {/* ── BOARD ── */}
           {tab==="board" && (
             <div>
-              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
-                STANDINGS · {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode).toUpperCase()}
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:4 }}>
+                STANDINGS · {getPeriodLabel(currentPeriodKey, periodMode).toUpperCase()}
+              </div>
+              <div style={{ color:GV.bg3, fontSize:10, letterSpacing:2, marginBottom:16 }}>
+                {activeGame.name.toUpperCase()}
               </div>
               {leaderboard.map((p, i) => (
                 <div key={p.id} onClick={() => setProfilePlayer(p)}
@@ -1408,6 +1965,27 @@ export default function App() {
                   placeholder="Where / context…" style={{ ...S.input, width:"100%" }} />
               </div>
 
+              {games.length > 1 && (
+                <div style={{ marginBottom:16 }}>
+                  <label style={S.label}>SUBMIT TO GAMES</label>
+                  {games.map(g => (
+                    <label key={g.id} style={{ display:"flex", alignItems:"center", gap:8,
+                      padding:"8px 12px", borderRadius:8, marginBottom:4,
+                      background: selectedGameIds.includes(g.id) ? `${GV.orangeB}18` : GV.bg1,
+                      border:`1px solid ${selectedGameIds.includes(g.id) ? GV.orangeB+"44" : GV.bg2}`,
+                      cursor:"pointer", fontSize:13, color:GV.fg }}>
+                      <input type="checkbox"
+                        checked={selectedGameIds.includes(g.id)}
+                        onChange={e => setSelectedGameIds(prev =>
+                          e.target.checked ? [...prev, g.id] : prev.filter(id => id !== g.id)
+                        )}
+                        style={{ accentColor:GV.orangeB }} />
+                      🎮 {g.name}
+                    </label>
+                  ))}
+                </div>
+              )}
+
               <ScorePreview score={preview} />
 
               <button onClick={handleSubmit} disabled={submitting} style={{
@@ -1509,21 +2087,8 @@ export default function App() {
             <div>
               <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>SETTINGS</div>
 
-              <div style={{ marginBottom:20, padding:"14px 16px", background:GV.bg1,
-                border:`1px solid ${GV.bg2}`, borderRadius:12 }}>
-                <label style={{ ...S.label, marginBottom:10 }}>RESET PERIOD</label>
-                <select value={periodMode} onChange={e => { setPeriodMode(e.target.value); setPeriodModeDirty(true); }}
-                  style={{ ...S.input, width:"100%", cursor:"pointer", marginBottom:8 }}>
-                  <option value="monthly">Monthly (resets 1st of every month)</option>
-                  <option value="quarterly">Quarterly (resets Jan/Apr/Jul/Oct 1st)</option>
-                </select>
-                <div style={{ color:GV.bg3, fontSize:11 }}>
-                  Current period: {getPeriodLabel(getPeriodKey(new Date(), periodMode), periodMode)}
-                </div>
-              </div>
-
               <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
-                {[["players","👥 Players"],["hof","🏆 Hall of Fame"]].map(([id,label]) => (
+                {[["players","👥 Players"],["hof","🏆 Hall of Fame"],["games","🎮 Games"]].map(([id,label]) => (
                   <button key={id} onClick={() => setAdminSection(id)} style={{
                     padding:"7px 14px", borderRadius:20,
                     border:`1px solid ${adminSection===id ? GV.orangeB : GV.bg2}`,
@@ -1542,9 +2107,14 @@ export default function App() {
                       background:GV.bg, border:`1px solid ${GV.bg2}` }}>
                       <PlayerBadge player={p} />
                       <span style={{ flex:1, color:GV.fg1 }}>{p.name}</span>
-                      <span style={{ color:GV.bg3, fontSize:12, marginRight:8 }}>
-                        {submissions.filter(s => s.playerId===p.id).length} finds
+                      <span style={{ color: p.isAdmin ? GV.yellowB : GV.bg3, fontSize:11, marginRight:4 }}>
+                        {p.isAdmin ? "admin" : ""}
                       </span>
+                      <button onClick={() => handleToggleAdmin(p.id, p.isAdmin)} style={{
+                        padding:"4px 8px", background:"transparent",
+                        border:`1px solid ${p.isAdmin ? GV.yellowB+"66" : GV.bg2}`, borderRadius:8,
+                        color: p.isAdmin ? GV.yellowB : GV.bg3, fontSize:10, cursor:"pointer", fontFamily:"inherit",
+                      }}>{p.isAdmin ? "★ Admin" : "☆"}</button>
                       <button onClick={() => setEditingPlayer(p)} style={{
                         padding:"5px 10px", background:"transparent",
                         border:`1px solid ${GV.bg2}`, borderRadius:8,
@@ -1566,12 +2136,38 @@ export default function App() {
               {adminSection==="hof" && (
                 <div>
                   <div style={{ color:GV.fg3, fontSize:11, marginBottom:12 }}>Each earns +40 bonus points</div>
-                  {hofList.map((h,i) => (
-                    <div key={i} style={{ display:"flex", alignItems:"center", justifyContent:"space-between",
+                  {hofList.map((h,i) => hofEditingIdx === i ? (
+                    <div key={i} style={{ display:"flex", gap:6, alignItems:"center", marginBottom:6, flexWrap:"wrap" }}>
+                      <input value={hofEditNumber} onChange={e => setHofEditNumber(e.target.value)}
+                        style={{ ...S.input, flex:1, minWidth:70 }} />
+                      <input value={hofEditLabel} onChange={e => setHofEditLabel(e.target.value)}
+                        style={{ ...S.input, flex:2, minWidth:100 }} />
+                      <button onClick={() => {
+                        setHofList(prev => prev.map((entry, j) =>
+                          j === i ? { ...entry, number: hofEditNumber.trim(), label: hofEditLabel.trim() } : entry
+                        ));
+                        setHofDirty(true);
+                        setHofEditingIdx(null);
+                      }} style={{ ...S.addBtn, padding:"8px 12px" }}>Save</button>
+                      <button onClick={() => setHofEditingIdx(null)} style={{
+                        padding:"8px 12px", background:"transparent", border:`1px solid ${GV.bg2}`,
+                        borderRadius:10, color:GV.fg3, cursor:"pointer", fontFamily:"inherit", fontSize:13,
+                      }}>Cancel</button>
+                    </div>
+                  ) : (
+                    <div key={i} style={{ display:"flex", alignItems:"center", gap:8,
                       padding:"9px 14px", borderRadius:10, marginBottom:6,
                       background:GV.bg, border:`1px solid ${GV.bg2}` }}>
-                      <span style={{ color:GV.yellowB, fontFamily:"'Courier Prime',monospace", letterSpacing:2 }}>{h.number}</span>
-                      <span style={{ color:GV.fg3, fontSize:12 }}>{h.label}</span>
+                      <span style={{ color:GV.yellowB, fontFamily:"'Courier Prime',monospace", letterSpacing:2, flex:1 }}>{h.number}</span>
+                      <span style={{ color:GV.fg3, fontSize:12, flex:2 }}>{h.label}</span>
+                      <button onClick={() => { setHofEditingIdx(i); setHofEditNumber(h.number); setHofEditLabel(h.label); }}
+                        style={{ background:"transparent", border:`1px solid ${GV.bg2}`, borderRadius:6,
+                          padding:"3px 7px", color:GV.fg3, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>✎</button>
+                      <button onClick={() => {
+                        setHofList(prev => prev.filter((_,j) => j !== i));
+                        setHofDirty(true);
+                      }} style={{ background:"transparent", border:`1px solid ${GV.red}`, borderRadius:6,
+                        padding:"3px 7px", color:GV.redB, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
                     </div>
                   ))}
                   <div style={{ marginTop:16, display:"flex", gap:8, flexWrap:"wrap" }}>
@@ -1581,6 +2177,72 @@ export default function App() {
                       placeholder="Label" style={{ ...S.input, flex:2, minWidth:120 }} />
                     <button onClick={addHof} style={S.addBtn}>Add</button>
                   </div>
+                </div>
+              )}
+
+              {adminSection==="games" && (
+                <div>
+                  {games.map(g => editingGame?.id === g.id ? (
+                    <div key={g.id} style={{ ...S.card, border:`1px solid ${GV.orangeB}44` }}>
+                      <div style={{ marginBottom:10 }}>
+                        <label style={S.label}>GAME NAME</label>
+                        <input value={editingGame.name}
+                          onChange={e => setEditingGame(prev => ({ ...prev, name: e.target.value }))}
+                          style={{ ...S.input, width:"100%", boxSizing:"border-box" }} />
+                      </div>
+                      <div style={{ marginBottom:10 }}>
+                        <label style={S.label}>JOIN CODE</label>
+                        <input value={editingGame.joinCode}
+                          onChange={e => setEditingGame(prev => ({ ...prev, joinCode: e.target.value.toUpperCase() }))}
+                          style={{ ...S.input, width:"100%", boxSizing:"border-box", letterSpacing:4 }} />
+                      </div>
+                      <div style={{ marginBottom:14 }}>
+                        <label style={S.label}>RESET PERIOD</label>
+                        <select value={editingGame.periodMode}
+                          onChange={e => setEditingGame(prev => ({ ...prev, periodMode: e.target.value }))}
+                          style={{ ...S.input, width:"100%", cursor:"pointer" }}>
+                          <option value="weekly">Weekly</option>
+                          <option value="monthly">Monthly</option>
+                          <option value="quarterly">Quarterly</option>
+                        </select>
+                      </div>
+                      <div style={{ display:"flex", gap:8 }}>
+                        <button onClick={() => handleUpdateGame(g.id, { name: editingGame.name, joinCode: editingGame.joinCode, periodMode: editingGame.periodMode })}
+                          style={{ ...S.addBtn, flex:1 }}>Save</button>
+                        <button onClick={() => setEditingGame(null)}
+                          style={{ flex:1, padding:"10px", background:"transparent",
+                            border:`1px solid ${GV.bg2}`, borderRadius:10,
+                            color:GV.fg3, cursor:"pointer", fontFamily:"inherit", fontSize:13 }}>Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div key={g.id} style={{ ...S.card,
+                      border:`1px solid ${g.id===activeGame?.id ? GV.orangeB+"44" : GV.bg2}` }}>
+                      <div style={{ display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:8 }}>
+                        <div>
+                          <div style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>🎮 {g.name}</div>
+                          <div style={{ color:GV.fg3, fontSize:11, marginTop:2 }}>
+                            {g.members?.length || 0} members · {g.periodMode || "weekly"}
+                          </div>
+                        </div>
+                        <button onClick={() => setEditingGame({ id: g.id, name: g.name, joinCode: g.joinCode, periodMode: g.periodMode || "weekly" })}
+                          style={{ padding:"5px 10px", background:"transparent",
+                            border:`1px solid ${GV.bg2}`, borderRadius:8,
+                            color:GV.fg3, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>Edit</button>
+                      </div>
+                      <div style={{ display:"flex", alignItems:"center", gap:8,
+                        padding:"8px 12px", background:GV.bg0, borderRadius:8 }}>
+                        <span style={{ color:GV.fg3, fontSize:10, letterSpacing:2 }}>JOIN CODE</span>
+                        <span style={{ color:GV.yellowB, fontFamily:"'Courier Prime',monospace",
+                          fontSize:16, letterSpacing:4, fontWeight:700 }}>{g.joinCode}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <button onClick={() => setShowCreateGame(true)} style={{
+                    width:"100%", marginTop:8, padding:"12px", background:"transparent",
+                    border:`1px dashed ${GV.bg2}`, borderRadius:10, color:GV.fg3,
+                    fontSize:13, cursor:"pointer", fontFamily:"inherit",
+                  }}>+ Create New Game</button>
                 </div>
               )}
 

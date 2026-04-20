@@ -1,0 +1,18 @@
+{
+  "name": "Clocktzee",
+  "short_name": "Clocktzee",
+  "description": "Family number hunting game — spot numbers in the wild and score like Yahtzee",
+  "start_url": "/clocktzee/",
+  "display": "standalone",
+  "background_color": "#1d2021",
+  "theme_color": "#fe8019",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/clocktzee/clocktzee.jpg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any maskable"
+    }
+  ]
+}

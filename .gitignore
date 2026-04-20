@@ -14,6 +14,9 @@ dist-ssr
 
 migrate-players.js
 seed-player-fields.js
+create-family-game.js
+tag-submissions.js
+migrate-champions.js
 
 # Editor directories and files
 .vscode/*
