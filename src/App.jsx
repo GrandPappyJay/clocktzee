@@ -7,7 +7,8 @@ import {
 } from "firebase/firestore";
 
 // ─── VERSION ──────────────────────────────────────────────────────────────────
-const VERSION = "2.0.0";
+// Increment VERSION with every deployed change so the WelcomeModal shows returning players what's new.
+const VERSION = "2.1.2";
 
 // ─── GRUVBOX PALETTES ─────────────────────────────────────────────────────────
 const GV_DARK = {
@@ -81,6 +82,16 @@ const COLOR_OPTIONS = [
 const REACTIONS = ["🔥","😂","🤯","👀","💯"];
 
 const CHANGELOG = [
+  {
+    version: "2.1.0",
+    entries: [
+      "Instant load — your last session restores from cache before Firestore responds",
+      "Birthday input redesigned — separate month and day fields, no more MM/DD guessing",
+      "Birthday matching now works inside longer numbers (e.g. a receipt containing your birthday)",
+      "Admin panel now requires a PIN to open",
+      "Any player can now create or join a game",
+    ],
+  },
   {
     version: "2.0.0",
     entries: [
@@ -218,13 +229,25 @@ function checkBirthday(digits, birthdays) {
   const todayM = today.getMonth() + 1;
   const todayD = today.getDate();
   for (const [pid, bday] of Object.entries(birthdays)) {
-    if (!bday || bday.month !== todayM || bday.day !== todayD) continue;
-    const mm = String(bday.month).padStart(2,"0");
-    const dd = String(bday.day).padStart(2,"0");
-    const m  = String(bday.month);
-    const d  = String(bday.day);
-    for (const pat of [mm+dd, m+dd, mm+d, m+d]) {
-      if (digits === pat) return { playerId: pid, bonus: 25 };
+    if (!bday) continue;
+    const bdM = Number(bday.month);
+    const bdD = Number(bday.day);
+    if (!bdM || !bdD) continue;
+    const isToday = bdM === todayM && bdD === todayD;
+    const mm = String(bdM).padStart(2,"0");
+    const dd = String(bdD).padStart(2,"0");
+    const m  = String(bdM);
+    const d  = String(bdD);
+    for (const pat of [...new Set([mm+dd, m+dd, mm+d, m+d])]) {
+      if (digits === pat) return { playerId: pid, isToday };
+      const idx = digits.indexOf(pat);
+      if (idx !== -1) {
+        const before = idx > 0 ? digits[idx - 1] : null;
+        const after  = idx + pat.length < digits.length ? digits[idx + pat.length] : null;
+        if (before !== pat[0] && after !== pat[pat.length - 1]) {
+          return { playerId: pid, isToday };
+        }
+      }
     }
   }
   return null;
@@ -290,7 +313,12 @@ function scoreSubmission(raw, category, playerId, submissions, birthdays, hofLis
   if (hof) { bonuses.push({ label: hof.label, points: 40 }); total += 40; }
 
   const bday = checkBirthday(digits, birthdays);
-  if (bday) { bonuses.push({ label: "🎂 Birthday Find!", points: 25 }); total += 25; }
+  if (bday) {
+    const pts = bday.isToday ? 50 : 25;
+    const label = bday.isToday ? "🎂 Birthday! Double points! 🎉" : "🎂 Birthday Find!";
+    bonuses.push({ label, points: pts });
+    total += pts;
+  }
 
   if (base.points > 0 && isFirstOfDay(submissions)) {
     bonuses.push({ label: "🌅 First of the Day", points: 5 }); total += 5;
@@ -619,13 +647,14 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
   const [name,   setName]   = useState(player?.name || "");
   const [emoji,  setEmoji]  = useState(player?.emoji || EMOJI_OPTIONS[0]);
   const [color,  setColor]  = useState(player?.color || COLOR_OPTIONS[0]);
-  const [bdText, setBdText] = useState(
-    birthday ? `${birthday.month}/${birthday.day}` : ""
-  );
+  const [bdMonth, setBdMonth] = useState(birthday?.month ? String(birthday.month) : "");
+  const [bdDay,   setBdDay]   = useState(birthday?.day   ? String(birthday.day)   : "");
 
   function handleSave() {
     if (!isEdit && !name.trim()) return;
-    const bd = parseBirthdayText(bdText) || { month:1, day:1 };
+    const m = parseInt(bdMonth);
+    const d = parseInt(bdDay);
+    const bd = (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? { month: m, day: d } : null;
     onSave({ name: name.trim(), emoji, color, birthday: bd });
   }
 
@@ -697,14 +726,24 @@ function PlayerModal({ player, birthday, onSave, onRemove, onClose, inputStyle, 
 
         <div style={{ marginBottom:24 }}>
           <label style={{ color:GV.fg3, fontSize:11, letterSpacing:2, display:"block", marginBottom:8 }}>
-            BIRTHDAY <span style={{ color:GV.bg3, letterSpacing:0, textTransform:"none", fontSize:10 }}>(MM/DD — for bonus)</span>
+            BIRTHDAY <span style={{ color:GV.bg3, letterSpacing:0, textTransform:"none", fontSize:10 }}>(earns bonus on their day)</span>
           </label>
-          <input value={bdText} onChange={e => setBdText(e.target.value)}
-            placeholder="e.g. 4/12 or 11/03"
-            style={{ ...inputStyle, width:160, boxSizing:"border-box" }} />
-          {bdText && !parseBirthdayText(bdText) && (
-            <div style={{ color:GV.redB, fontSize:11, marginTop:4 }}>Use MM/DD format</div>
-          )}
+          <div style={{ display:"flex", gap:10 }}>
+            <div style={{ flex:1 }}>
+              <div style={{ color:GV.fg3, fontSize:10, letterSpacing:1, marginBottom:5 }}>MONTH (1–12)</div>
+              <input type="number" min={1} max={12}
+                value={bdMonth} onChange={e => setBdMonth(e.target.value)}
+                placeholder="MM"
+                style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }} />
+            </div>
+            <div style={{ flex:1 }}>
+              <div style={{ color:GV.fg3, fontSize:10, letterSpacing:1, marginBottom:5 }}>DAY (1–31)</div>
+              <input type="number" min={1} max={31}
+                value={bdDay} onChange={e => setBdDay(e.target.value)}
+                placeholder="DD"
+                style={{ ...inputStyle, width:"100%", boxSizing:"border-box" }} />
+            </div>
+          </div>
         </div>
 
         <button onClick={handleSave} style={{ width:"100%", padding:"13px",
@@ -736,7 +775,7 @@ function RulesTab({ hofList }) {
   const baseScores = [
     { name:"Five of a Kind 🎰", pts:100, example:"1:11:11", desc:"Five identical digits in a row" },
     { name:"Straight 📈",       pts:80,  example:"1:23:45", desc:"4 or 5 sequential digits in order (asc or desc)" },
-    { name:"Four of a Kind 🔥", pts:60,  example:"11:11",   desc:"Four identical digits in a row" },
+    { name:"Four of a Kind 🔥", pts:60,  example:"1:111",   desc:"Four identical digits in a row" },
     { name:"Palindrome 🪞",     pts:60,  example:"5:84:85", desc:"5+ digits that read the same forwards and backwards" },
     { name:"Full House 🏠",     pts:50,  example:"11:22:2", desc:"Three consecutive of one + two consecutive of another" },
     { name:"Small Straight 📉", pts:40,  example:"1:23",    desc:"3 sequential digits in order (asc or desc)" },
@@ -894,8 +933,9 @@ function ChampionsTab({ champions, players }) {
 
 // ─── PLAYER SELECT SCREEN ─────────────────────────────────────────────────────
 
-function PlayerSelectScreen({ players, onSelect, onAddPlayer }) {
+function PlayerSelectScreen({ players, playersLoaded, onSelect, onAddPlayer }) {
   const GV = useContext(ThemeContext);
+  const showPlaceholder = players.length === 0 && !playersLoaded;
   return (
     <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", padding:"24px 16px",
@@ -908,33 +948,44 @@ function PlayerSelectScreen({ players, onSelect, onAddPlayer }) {
         </div>
         <div style={{ color:GV.fg3, fontSize:12, letterSpacing:3 }}>WHO ARE YOU?</div>
       </div>
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, width:"100%", maxWidth:400 }}>
-        {players.map(p => (
-          <button key={p.id} onClick={() => onSelect(p)} style={{
-            background:GV.bg1, border:`2px solid ${p.color}44`,
-            borderRadius:16, padding:"20px 16px", cursor:"pointer",
-            display:"flex", flexDirection:"column", alignItems:"center", gap:10,
-            fontFamily:"inherit", transition:"all 0.15s",
+
+      {showPlaceholder ? (
+        <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
+          justifyContent:"center", gap:10, padding:"32px 0" }}>
+          <span style={{ fontSize:36 }}>🎲</span>
+          <span style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>Loading...</span>
+        </div>
+      ) : (
+        <>
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:12, width:"100%", maxWidth:400 }}>
+            {players.map(p => (
+              <button key={p.id} onClick={() => onSelect(p)} style={{
+                background:GV.bg1, border:`2px solid ${p.color}44`,
+                borderRadius:16, padding:"20px 16px", cursor:"pointer",
+                display:"flex", flexDirection:"column", alignItems:"center", gap:10,
+                fontFamily:"inherit", transition:"all 0.15s",
+              }}
+                onMouseOver={e => e.currentTarget.style.borderColor = p.color}
+                onMouseOut={e => e.currentTarget.style.borderColor = p.color+"44"}
+              >
+                <div style={{ width:52, height:52, borderRadius:"50%", background:p.color+"33",
+                  border:`2px solid ${p.color}`, display:"flex", alignItems:"center",
+                  justifyContent:"center", fontSize:26 }}>{p.emoji}</div>
+                <span style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>{p.name}</span>
+              </button>
+            ))}
+          </div>
+          <button onClick={onAddPlayer} style={{
+            marginTop:24, padding:"10px 24px", background:"transparent",
+            border:`1px dashed ${GV.bg3}`, borderRadius:20, color:GV.fg3,
+            fontSize:12, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+            transition:"all 0.15s",
           }}
-            onMouseOver={e => e.currentTarget.style.borderColor = p.color}
-            onMouseOut={e => e.currentTarget.style.borderColor = p.color+"44"}
-          >
-            <div style={{ width:52, height:52, borderRadius:"50%", background:p.color+"33",
-              border:`2px solid ${p.color}`, display:"flex", alignItems:"center",
-              justifyContent:"center", fontSize:26 }}>{p.emoji}</div>
-            <span style={{ color:GV.fg, fontWeight:700, fontSize:14 }}>{p.name}</span>
-          </button>
-        ))}
-      </div>
-      <button onClick={onAddPlayer} style={{
-        marginTop:24, padding:"10px 24px", background:"transparent",
-        border:`1px dashed ${GV.bg3}`, borderRadius:20, color:GV.fg3,
-        fontSize:12, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
-        transition:"all 0.15s",
-      }}
-        onMouseOver={e => { e.currentTarget.style.borderColor=GV.orangeB; e.currentTarget.style.color=GV.orangeB; }}
-        onMouseOut={e => { e.currentTarget.style.borderColor=GV.bg3; e.currentTarget.style.color=GV.fg3; }}
-      >+ New Player</button>
+            onMouseOver={e => { e.currentTarget.style.borderColor=GV.orangeB; e.currentTarget.style.color=GV.orangeB; }}
+            onMouseOut={e => { e.currentTarget.style.borderColor=GV.bg3; e.currentTarget.style.color=GV.fg3; }}
+          >+ New Player</button>
+        </>
+      )}
     </div>
   );
 }
@@ -1004,13 +1055,11 @@ function ProfileSheet({ player, submissions, games, activeGame, onClose, onEdit,
               border:`1px solid ${GV.blueB}`, borderRadius:10, color:GV.blueB,
               fontSize:12, cursor:"pointer", fontFamily:"inherit",
             }}>Join a Game</button>
-            {player.isAdmin && (
-              <button onClick={() => { onCreateGame(); onClose(); }} style={{
-                flex:1, padding:"9px", background:"transparent",
-                border:`1px solid ${GV.orangeB}`, borderRadius:10, color:GV.orangeB,
-                fontSize:12, cursor:"pointer", fontFamily:"inherit",
-              }}>+ Create Game</button>
-            )}
+            <button onClick={() => { onCreateGame(); onClose(); }} style={{
+              flex:1, padding:"9px", background:"transparent",
+              border:`1px solid ${GV.orangeB}`, borderRadius:10, color:GV.orangeB,
+              fontSize:12, cursor:"pointer", fontFamily:"inherit",
+            }}>+ Create Game</button>
           </div>
         </div>
 
@@ -1167,13 +1216,11 @@ function GameSelectScreen({ player, games, gamesLoaded, onSelect, onCreateGame, 
           border:`1px solid ${GV.blueB}`, borderRadius:12, color:GV.blueB,
           fontSize:13, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
         }}>Join a Game →</button>
-        {player.isAdmin && (
-          <button onClick={onCreateGame} style={{
-            padding:"13px", background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
-            border:"none", borderRadius:12, color:GV.bg0,
-            fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
-          }}>+ Create New Game</button>
-        )}
+        <button onClick={onCreateGame} style={{
+          padding:"13px", background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+          border:"none", borderRadius:12, color:GV.bg0,
+          fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit", letterSpacing:1,
+        }}>+ Create New Game</button>
         <button onClick={onSwitchPlayer} style={{
           padding:"10px", background:"transparent",
           border:"none", color:GV.bg3,
@@ -1283,18 +1330,67 @@ function JoinGameModal({ onJoin, onClose, inputStyle }) {
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 
+// ─── CACHE HELPERS ────────────────────────────────────────────────────────────
+
+function readCache(key, fallback) {
+  try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : fallback; } catch { return fallback; }
+}
+function writeCache(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
 export default function App() {
   const [tab,          setTab]          = useState("board");
-  const [players,      setPlayers]      = useState([]);
+
+  // Phase 1: initialise players from localStorage cache immediately
+  const [players, setPlayers] = useState(() => readCache("ctz_cached_players", []));
+  const [playersLoaded, setPlayersLoaded] = useState(
+    () => readCache("ctz_cached_players", []).length > 0
+  );
+
   const [submissions,  setSubmissions]  = useState([]);
   const [hofList,      setHofList]      = useState(HALL_OF_FAME_DEFAULT);
   const [champions,    setChampions]    = useState([]);
   const [loaded,       setLoaded]       = useState(false);
-  const [playersLoaded,setPlayersLoaded]= useState(false);
 
-  const [games,        setGames]        = useState([]);
-  const [gamesLoaded,  setGamesLoaded]  = useState(false);
-  const [activeGame,   setActiveGame]   = useState(null);
+  // Phase 1: initialise currentPlayer from cached players + saved id
+  const [currentPlayer, setCurrentPlayer] = useState(() => {
+    try {
+      const savedId = localStorage.getItem("ctz_player_id");
+      if (!savedId) return null;
+      const cached = readCache("ctz_cached_players", []);
+      return cached.find(p => p.id === savedId) || null;
+    } catch { return null; }
+  });
+
+  // Phase 1: initialise games from per-player cache
+  const [games, setGames] = useState(() => {
+    try {
+      const savedId = localStorage.getItem("ctz_player_id");
+      if (!savedId) return [];
+      return readCache(`ctz_cached_games_${savedId}`, []);
+    } catch { return []; }
+  });
+  const [gamesLoaded, setGamesLoaded] = useState(() => {
+    try {
+      const savedId = localStorage.getItem("ctz_player_id");
+      if (!savedId) return false;
+      return readCache(`ctz_cached_games_${savedId}`, []).length > 0;
+    } catch { return false; }
+  });
+
+  // Phase 1: initialise activeGame from cached games + saved active id
+  const [activeGame, setActiveGame] = useState(() => {
+    try {
+      const savedId = localStorage.getItem("ctz_player_id");
+      if (!savedId) return null;
+      const cachedGames = readCache(`ctz_cached_games_${savedId}`, []);
+      if (!cachedGames.length) return null;
+      const activeId = localStorage.getItem("ctz_active_game");
+      if (activeId) { const g = cachedGames.find(g => g.id === activeId); if (g) return g; }
+      return cachedGames.length === 1 ? cachedGames[0] : null;
+    } catch { return null; }
+  });
   const [showCreateGame, setShowCreateGame] = useState(false);
   const [showJoinGame,   setShowJoinGame]   = useState(false);
   const [editingGame,    setEditingGame]    = useState(null);
@@ -1303,7 +1399,6 @@ export default function App() {
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [isFirstTimeUser,  setIsFirstTimeUser]  = useState(false);
 
-  const [currentPlayer,       setCurrentPlayer]       = useState(null);
   const [showProfileSheet,    setShowProfileSheet]     = useState(false);
   const [editingCurrentPlayer,setEditingCurrentPlayer] = useState(false);
 
@@ -1330,28 +1425,33 @@ export default function App() {
   const [hofEditLabel,  setHofEditLabel]  = useState("");
   const [adminSection, setAdminSection] = useState("players");
 
+  const [adminPinUnlocked, setAdminPinUnlocked] = useState(false);
+  const [adminPinInput,    setAdminPinInput]    = useState("");
+  const [adminPinError,    setAdminPinError]    = useState("");
+
   const GV = currentPlayer?.theme === "light" ? GV_LIGHT : GV_DARK;
 
   // ── Welcome modal check ──
   useEffect(() => {
-    if (!loaded || !playersLoaded) return;
     const accepted = localStorage.getItem("ctz_terms_accepted");
     if (!accepted || accepted !== VERSION) {
       setIsFirstTimeUser(!accepted);
       setShowWelcomeModal(true);
     }
-  }, [loaded, playersLoaded]);
+  }, []);
 
   function handleAcceptTerms() {
     localStorage.setItem("ctz_terms_accepted", VERSION);
     setShowWelcomeModal(false);
   }
 
-  // ── Load players via onSnapshot ──
+  // ── Phase 2: load players via onSnapshot, write back to cache ──
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "players"), snap => {
-      setPlayers(snap.docs.map(d => d.data()));
+      const fresh = snap.docs.map(d => d.data());
+      setPlayers(fresh);
       setPlayersLoaded(true);
+      writeCache("ctz_cached_players", fresh);
     });
     return unsub;
   }, []);
@@ -1363,7 +1463,7 @@ export default function App() {
     if (updated) setCurrentPlayer(updated);
   }, [players]);
 
-  // ── Restore session from localStorage once players are available ──
+  // ── Restore session when Firestore fires and no cache was available ──
   useEffect(() => {
     if (!playersLoaded || currentPlayer) return;
     const savedId = localStorage.getItem("ctz_player_id");
@@ -1401,7 +1501,7 @@ export default function App() {
   const [hofDirty, setHofDirty] = useState(false);
   useEffect(() => { if (hofDirty) { fsSet("settings/hof", hofList); setHofDirty(false); } }, [hofList]);
 
-  // ── Games subscription ──
+  // ── Phase 2: games subscription, write back to cache ──
   useEffect(() => {
     if (!currentPlayer) return;
     gamesFirstLoad.current = true;
@@ -1410,16 +1510,21 @@ export default function App() {
       const gs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       setGames(gs);
       setGamesLoaded(true);
+      writeCache(`ctz_cached_games_${currentPlayer.id}`, gs);
       if (gamesFirstLoad.current) {
         gamesFirstLoad.current = false;
-        const savedId = localStorage.getItem("ctz_active_game");
-        const saved = savedId ? gs.find(g => g.id === savedId) : null;
-        if (saved) {
-          setActiveGame(saved);
-        } else if (gs.length === 1) {
-          setActiveGame(gs[0]);
-          localStorage.setItem("ctz_active_game", gs[0].id);
-        }
+        setActiveGame(prev => {
+          if (prev) {
+            // Already set from cache — refresh with live Firestore data
+            return gs.find(g => g.id === prev.id) || prev;
+          }
+          // No cache hit — try saved id then single-game auto-select
+          const savedId = localStorage.getItem("ctz_active_game");
+          const saved = savedId ? gs.find(g => g.id === savedId) : null;
+          if (saved) return saved;
+          if (gs.length === 1) { localStorage.setItem("ctz_active_game", gs[0].id); return gs[0]; }
+          return null;
+        });
       } else {
         setActiveGame(prev => prev ? (gs.find(g => g.id === prev.id) || prev) : prev);
       }
@@ -1442,9 +1547,9 @@ export default function App() {
     if (games.length > 0) setSelectedGameIds(games.map(g => g.id));
   }, [games.length]);
 
-  // ── Birthdays derived from player docs ──
+  // ── Birthdays derived from player docs (all players; checkBirthday handles null) ──
   const birthdays = Object.fromEntries(
-    players.filter(p => p.birthday).map(p => [p.id, p.birthday])
+    players.map(p => [p.id, p.birthday ?? null])
   );
 
   // ── Period reset check ──
@@ -1489,7 +1594,7 @@ export default function App() {
   useEffect(() => {
     if (!rawInput || !currentPlayer) { setPreview(null); return; }
     setPreview(scoreSubmission(rawInput, category, currentPlayer.id, submissions, birthdays, hofList));
-  }, [rawInput, currentPlayer, category, submissions]);
+  }, [rawInput, currentPlayer, category, submissions, birthdays]);
 
   // ── Last visited tracking ──
   const [lastVisited] = useState(() => {
@@ -1553,14 +1658,20 @@ export default function App() {
   }
 
   // ── Player CRUD ──
+  function normalizeBirthday(bd) {
+    if (!bd) return null;
+    const m = Number(bd.month); const d = Number(bd.day);
+    return (m >= 1 && m <= 12 && d >= 1 && d <= 31) ? { month: m, day: d } : null;
+  }
+
   async function handleAddPlayer({ name, emoji, color, birthday }) {
     const id = name.toLowerCase().replace(/\s+/g,"_") + "_" + Date.now();
-    await setDoc(doc(db, "players", id), { id, name, emoji, color, isAdmin: false, birthday, theme: "dark" });
+    await setDoc(doc(db, "players", id), { id, name, emoji, color, isAdmin: false, birthday: normalizeBirthday(birthday), theme: "dark" });
     setShowAddPlayer(false);
   }
 
   async function handleEditPlayer(playerId, { name, emoji, color, birthday }) {
-    await updateDoc(doc(db, "players", playerId), { name, emoji, color, birthday });
+    await updateDoc(doc(db, "players", playerId), { name, emoji, color, birthday: normalizeBirthday(birthday) });
     setEditingPlayer(null);
     setEditingCurrentPlayer(false);
   }
@@ -1580,6 +1691,9 @@ export default function App() {
     setCurrentPlayer(null);
     setShowProfileSheet(false);
     setTab("board");
+    setAdminPinUnlocked(false);
+    setAdminPinInput("");
+    setAdminPinError("");
   }
 
   async function handleThemeToggle() {
@@ -1675,17 +1789,22 @@ export default function App() {
               color:GV.bg0, fontWeight:700, cursor:"pointer", fontFamily:"inherit", fontSize:13 },
   };
 
-  if (!loaded || !playersLoaded) return (
-    <div style={{ background:GV_DARK.bg0, minHeight:"100vh", display:"flex",
-      alignItems:"center", justifyContent:"center",
-      color:GV_DARK.orangeB, fontFamily:"'Courier Prime',monospace", fontSize:20 }}>
-      Loading Clocktzee…
-    </div>
-  );
-
   const darkInput = { background:GV_DARK.bg0, border:`1px solid ${GV_DARK.bg2}`, borderRadius:10,
     padding:"12px 14px", color:GV_DARK.fg, fontSize:13, fontFamily:"inherit",
     outline:"none", boxSizing:"border-box" };
+
+  // First-ever load — no cache, waiting for Firestore
+  if (players.length === 0 && !playersLoaded) return (
+    <div style={{ background:GV_DARK.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
+      alignItems:"center", justifyContent:"center", fontFamily:"'Courier Prime',monospace" }}>
+      <div style={{ display:"flex", alignItems:"baseline", gap:10, marginBottom:16 }}>
+        <span style={{ fontSize:34, fontWeight:900, color:GV_DARK.orangeB, letterSpacing:-1 }}>CLOCK</span>
+        <span style={{ fontSize:34, fontWeight:900, color:GV_DARK.yellowB, letterSpacing:-1 }}>TZEE</span>
+        <span style={{ fontSize:24, marginLeft:4 }}>🎲</span>
+      </div>
+      <div style={{ color:GV_DARK.fg3, fontSize:12, letterSpacing:3 }}>LOADING…</div>
+    </div>
+  );
 
   if (showWelcomeModal) return (
     <ThemeContext.Provider value={GV}>
@@ -1695,7 +1814,7 @@ export default function App() {
 
   if (!currentPlayer) return (
     <ThemeContext.Provider value={GV_DARK}>
-      <PlayerSelectScreen players={players} onSelect={handleSelectPlayer} onAddPlayer={() => setShowAddPlayer(true)} />
+      <PlayerSelectScreen players={players} playersLoaded={playersLoaded} onSelect={handleSelectPlayer} onAddPlayer={() => setShowAddPlayer(true)} />
       {showAddPlayer && (
         <PlayerModal
           player={null} birthday={null}
@@ -1840,6 +1959,18 @@ export default function App() {
           {/* ── BOARD ── */}
           {tab==="board" && (
             <div>
+              <style>{`
+                @keyframes ctz-pulse {
+                  0%,100% { opacity:0.4; } 50% { opacity:1; }
+                }
+              `}</style>
+              {!playersLoaded && (
+                <div style={{ textAlign:"center", marginBottom:12,
+                  color:GV.fg3, fontSize:11, letterSpacing:2,
+                  animation:"ctz-pulse 1.4s ease-in-out infinite" }}>
+                  Refreshing…
+                </div>
+              )}
               <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:4 }}>
                 STANDINGS · {getPeriodLabel(currentPeriodKey, periodMode).toUpperCase()}
               </div>
@@ -2085,6 +2216,41 @@ export default function App() {
           {/* ── ADMIN ── */}
           {tab==="admin" && currentPlayer.isAdmin && (
             <div>
+              {!adminPinUnlocked ? (
+                <div style={{ maxWidth:300, margin:"40px auto 0", textAlign:"center" }}>
+                  <div style={{ fontSize:32, marginBottom:12 }}>🔒</div>
+                  <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>ADMIN ACCESS</div>
+                  <input
+                    value={adminPinInput}
+                    onChange={e => { setAdminPinInput(e.target.value.toUpperCase()); setAdminPinError(""); }}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") {
+                        if (adminPinInput === "GPJ") { setAdminPinUnlocked(true); setAdminPinInput(""); }
+                        else { setAdminPinError("Incorrect PIN."); setAdminPinInput(""); }
+                      }
+                    }}
+                    placeholder="PIN"
+                    style={{ ...S.input, width:"100%", boxSizing:"border-box", letterSpacing:8,
+                      textAlign:"center", fontSize:20, marginBottom:10 }}
+                  />
+                  {adminPinError && (
+                    <div style={{ color:GV.redB, fontSize:12, marginBottom:10 }}>{adminPinError}</div>
+                  )}
+                  <button onClick={() => {
+                    if (adminPinInput === "GPJ") {
+                      setAdminPinUnlocked(true); setAdminPinInput(""); setAdminPinError("");
+                    } else {
+                      setAdminPinError("Incorrect PIN."); setAdminPinInput("");
+                    }
+                  }} style={{ width:"100%", padding:"13px",
+                    background:`linear-gradient(135deg,${GV.orange},${GV.orangeB})`,
+                    border:"none", borderRadius:12, color:GV.bg0, fontSize:14,
+                    fontWeight:900, letterSpacing:2, cursor:"pointer", fontFamily:"inherit" }}>
+                    UNLOCK
+                  </button>
+                </div>
+              ) : (
+              <div>
               <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>SETTINGS</div>
 
               <div style={{ display:"flex", gap:8, marginBottom:20, flexWrap:"wrap" }}>
@@ -2255,6 +2421,8 @@ export default function App() {
                   Reset All Scores
                 </button>
               </div>
+              </div>
+              )}
             </div>
           )}
 
