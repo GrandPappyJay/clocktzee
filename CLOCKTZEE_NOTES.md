@@ -1,10 +1,19 @@
 # Clocktzee Dev Notes
 
-## Current Version: 2.0.0
+## Current Version: 2.1.1
 
 ---
 
-## ✅ Recently Completed (v2.0.0 session — Apr 2026)
+## ✅ Recently Completed (v2.1.1 session — May 2026)
+
+- **Debug console.log cleanup** — all debug logging removed from production code; `src/` is clean.
+- **Four of a Kind Rules example corrected** — example in the Rules tab now shows `1:111` (was erroneously `11:12`).
+- **Rare Find + First of the Day gated on base score > 0** — both bonuses now require a qualifying pattern; No Pattern (0pt) submissions no longer trigger them.
+- **First of the Day made global** — `isFirstOfDay` now checks all submissions across all players and games (not per-player). Only the very first qualifying submission of the calendar day earns the bonus.
+
+---
+
+## ✅ Previously Completed (v2.0.0 session — Apr 2026)
 
 - **Two-phase cache loading** — players, games, and activeGame restored instantly from localStorage cache on mount; Firestore `onSnapshot` listeners update state in the background and write fresh data back to `ctz_cached_players` and `ctz_cached_games_<playerId>` for next visit. First-ever load shows a minimal branded screen.
 - **PlayerSelectScreen loading placeholder** — when `players.length === 0 && !playersLoaded`, shows a centered 🎲 + "Loading..." instead of the "+ New Player" button. Button only appears after players are confirmed loaded.
@@ -25,16 +34,13 @@
 
 ## 🐛 Still Open
 
-- **Four of a Kind example in Rules shows `11:12`** — should be `1:111` or similar. Low priority cosmetic fix.
-- **Rare Find + First of the Day awarded on No Pattern (0pt) scores** — bonuses should require a qualifying base score > 0.
-- **First of the Day scope** — currently per-player; improvement to make it global (one award per day total across all players).
+- *(No known open bugs as of v2.1.1)*
 
 ---
 
 ## ✏️ Improvements Queued
 
-- **Period reset — live test needed** — confirm weekly reset fires correctly at Monday 4:00 AM CST before May go-live. Champions doc written, `ctz_last_period_<gameId>` localStorage key drives detection.
-- **First of the Day — make global** — one bonus per calendar day total, not per player.
+- **Period reset — live test needed** — confirm weekly reset fires correctly at Monday 4:00 AM CST. Champions doc written, `ctz_last_period_<gameId>` localStorage key drives detection. Has not been verified against a real period boundary.
 
 ---
 
@@ -82,4 +88,4 @@ Ran `seed-player-fields.js`. Each player doc now has: `id`, `name`, `emoji`, `co
 
 ---
 
-## 📅 Target: Live before May 1, 2026
+## 📅 Status: Live — v2.1.1 (May 2026)

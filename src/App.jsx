@@ -1603,9 +1603,6 @@ export default function App() {
     localStorage.setItem("ctz_last_visited", new Date().toISOString());
     return ts;
   });
-  const newFindsCount = lastVisited
-    ? submissions.filter(s => new Date(s.timestamp) > lastVisited).length
-    : 0;
 
   // ── Image ──
   async function handleImageChange(e) {
@@ -1765,6 +1762,14 @@ export default function App() {
         getPeriodKey(new Date(s.timestamp), periodMode) === currentPeriodKey
       )
     : [];
+
+  const feedSubs = activeGame
+    ? submissions.filter(s => s.gameIds?.includes(activeGame.id))
+    : [];
+
+  const newFindsCount = lastVisited
+    ? feedSubs.filter(s => new Date(s.timestamp) > lastVisited).length
+    : 0;
 
   const leaderboard = players
     .filter(p => activeGame?.members?.includes(p.id))
@@ -2151,12 +2156,12 @@ export default function App() {
                 </div>
               )}
               <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3, marginBottom:20 }}>
-                RECENT FINDS · {submissions.length} TOTAL
+                RECENT FINDS · {feedSubs.length} TOTAL
               </div>
-              {submissions.length===0 && (
+              {feedSubs.length===0 && (
                 <div style={{ color:GV.bg3, textAlign:"center", marginTop:40, fontSize:13 }}>No finds yet!</div>
               )}
-              {submissions.slice(0,40).map(s => {
+              {feedSubs.slice(0,40).map(s => {
                 const player = players.find(p => p.id===s.playerId) ||
                   { name: s.playerName || s.playerId || "?", emoji:"👤", color:GV.bg4 };
                 const dt = new Date(s.timestamp);
