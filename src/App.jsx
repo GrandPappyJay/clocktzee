@@ -8,7 +8,7 @@ import {
 
 // ─── VERSION ──────────────────────────────────────────────────────────────────
 // Increment VERSION with every deployed change so the WelcomeModal shows returning players what's new.
-const VERSION = "2.1.2";
+const VERSION = "2.2.0";
 
 // ─── GRUVBOX PALETTES ─────────────────────────────────────────────────────────
 const GV_DARK = {
@@ -82,6 +82,16 @@ const COLOR_OPTIONS = [
 const REACTIONS = ["🔥","😂","🤯","👀","💯"];
 
 const CHANGELOG = [
+  {
+    version: "2.2.0",
+    entries: [
+      "Photo submission now lets you choose from your camera roll or take a new photo",
+      "About sheet — tap the CLOCKTZEE title to see version, credits, and terms",
+      "Streak detection improved — now counts from 3 days and fixes a date sorting bug",
+      "Expired photo data now purged from the database, not just hidden",
+      "Responsive layout improvements across all screen sizes",
+    ],
+  },
   {
     version: "2.1.0",
     entries: [
@@ -272,26 +282,38 @@ function isFirstOfDay(submissions) {
   return !submissions.some(s => new Date(s.timestamp).toDateString() === today);
 }
 
-function checkStreak(submissions, playerId) {
-  const daySet = new Set(
-    submissions.filter(s => s.playerId === playerId).map(s => {
-      const d = new Date(s.timestamp);
-      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    })
-  );
-  const days = [...daySet].sort((a,b) => {
-    const [ay,am,ad] = a.split("-").map(Number);
-    const [by,bm,bd] = b.split("-").map(Number);
-    return new Date(ay,am,ad) - new Date(by,bm,bd);
-  });
-  if (days.length < 5) return false;
-  const last5 = days.slice(-5);
-  for (let i = 1; i < last5.length; i++) {
-    const [py,pm,pd] = last5[i-1].split("-").map(Number);
-    const [cy,cm,cd] = last5[i].split("-").map(Number);
-    if (Math.round((new Date(cy,cm,cd) - new Date(py,pm,pd)) / 86400000) !== 1) return false;
+function getStreakLength(submissions, playerId) {
+  const days = [...new Set(
+    submissions
+      .filter(s => s.playerId === playerId)
+      .map(s => {
+        const d = new Date(s.timestamp);
+        return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+      })
+  )].sort();
+
+  if (days.length === 0) return 0;
+
+  const today = (() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  })();
+  const yesterday = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+  })();
+
+  if (!days.includes(today) && !days.includes(yesterday)) return 0;
+
+  let streak = 1;
+  for (let i = days.length - 1; i > 0; i--) {
+    const curr = new Date(days[i]);
+    const prev = new Date(days[i-1]);
+    const diff = Math.round((curr - prev) / 86400000);
+    if (diff === 1) { streak++; }
+    else { break; }
   }
-  return true;
+  return streak;
 }
 
 function hasPlayerSubmittedThisFind(submissions, playerId, raw, periodKey, periodMode) {
@@ -328,7 +350,7 @@ function scoreSubmission(raw, category, playerId, submissions, birthdays, hofLis
     bonuses.push({ label: "🆕 Rare Find (first ever!)", points: 10 }); total += 10;
   }
 
-  if (checkStreak(submissions, playerId)) {
+  if (getStreakLength(submissions, playerId) >= 3) {
     bonuses.push({ label: "🔥 5-Day Streak", points: 25 }); total += 25;
   }
 
@@ -939,7 +961,7 @@ function PlayerSelectScreen({ players, playersLoaded, onSelect, onAddPlayer }) {
   return (
     <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", padding:"24px 16px",
-      fontFamily:"'Courier Prime',monospace" }}>
+      fontFamily:"'Courier Prime',monospace", boxSizing:"border-box", width:"100%" }}>
       <div style={{ marginBottom:32, textAlign:"center" }}>
         <div style={{ display:"flex", alignItems:"baseline", gap:10, justifyContent:"center", marginBottom:10 }}>
           <span style={{ fontSize:34, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
@@ -1085,6 +1107,116 @@ function ProfileSheet({ player, submissions, games, activeGame, onClose, onEdit,
   );
 }
 
+// ─── ABOUT SHEET ─────────────────────────────────────────────────────────────
+
+function AboutSheet({ onClose }) {
+  const GV = useContext(ThemeContext);
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0,
+      background:"rgba(0,0,0,0.75)", zIndex:300,
+      display:"flex", alignItems:"flex-end", justifyContent:"center" }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background:GV.bg1, borderRadius:"16px 16px 0 0",
+        width:"100%", maxWidth:480, padding:"28px 24px 48px",
+        maxHeight:"85vh", overflowY:"auto",
+      }}>
+        <div style={{ display:"flex", alignItems:"flex-start",
+          justifyContent:"space-between", marginBottom:24 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:14 }}>
+            <span style={{ fontSize:44 }}>🎲</span>
+            <div>
+              <div style={{ display:"flex", alignItems:"baseline", gap:6 }}>
+                <span style={{ fontSize:22, fontWeight:900, color:GV.orangeB,
+                  letterSpacing:-1 }}>CLOCK</span>
+                <span style={{ fontSize:22, fontWeight:900, color:GV.yellowB,
+                  letterSpacing:-1 }}>TZEE</span>
+              </div>
+              <div style={{ color:GV.fg3, fontSize:11, letterSpacing:3,
+                marginTop:4 }}>FAMILY NUMBER HUNT</div>
+              <div style={{ color:GV.yellowB, fontSize:12, fontWeight:700,
+                marginTop:4 }}>v{VERSION}</div>
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none",
+            color:GV.fg3, fontSize:22, cursor:"pointer", padding:4,
+            lineHeight:1 }}>✕</button>
+        </div>
+
+        <div style={{ background:GV.bg0, borderRadius:12,
+          padding:"14px 16px", marginBottom:20,
+          borderLeft:`3px solid ${GV.orangeB}` }}>
+          <div style={{ color:GV.fg, fontSize:13, lineHeight:1.7 }}>
+            A live family number-hunting game inspired by Yahtzee.
+            Photograph numbers you spot in the wild — on clocks,
+            receipts, signs, addresses — and score points based on
+            Yahtzee-style digit patterns.
+          </div>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:2,
+            marginBottom:10 }}>MADE BY</div>
+          <div style={{ background:GV.bg0, borderRadius:12,
+            padding:"14px 16px" }}>
+            <div style={{ color:GV.fg, fontWeight:700, fontSize:14,
+              marginBottom:4 }}>👴 GrandPappyJay</div>
+            <div style={{ color:GV.fg3, fontSize:12, lineHeight:1.6 }}>
+              A GrandPappyLabs game — built for family and friends.
+              If you're playing this, you probably know Jason. 👋
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:2,
+            marginBottom:10 }}>SISTER GAME</div>
+          <div style={{ background:GV.bg0, borderRadius:12,
+            padding:"14px 16px", border:`1px solid ${GV.bg2}` }}>
+            <div style={{ color:GV.orangeB, fontWeight:700,
+              fontSize:14, marginBottom:4 }}>👁️ EyeSpy</div>
+            <div style={{ color:GV.fg3, fontSize:12, lineHeight:1.6 }}>
+              A daily real-world scavenger hunt. Find things that match
+              today's words, snap a photo, and score points.
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:20 }}>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:2,
+            marginBottom:10 }}>TERMS OF USE</div>
+          <div style={{ background:GV.bg0, borderRadius:12,
+            padding:"14px 16px", color:GV.fg3, fontSize:12,
+            lineHeight:1.8 }}>
+            Clocktzee is a private app for personal and family
+            entertainment — not a commercial service. All photos and
+            content you submit are your responsibility. Only post
+            content you have the right to share. The app owner is not
+            liable for any content submitted by other players. This app
+            is provided as-is, for entertainment only, with no
+            warranties of any kind. Use is entirely voluntary and at
+            your own risk.
+          </div>
+        </div>
+
+        <div>
+          <div style={{ color:GV.fg3, fontSize:11, letterSpacing:2,
+            marginBottom:10 }}>VERSION HISTORY</div>
+          {CHANGELOG.map(c => (
+            <div key={c.version} style={{ marginBottom:12 }}>
+              <div style={{ color:GV.yellowB, fontSize:11, fontWeight:700,
+                marginBottom:6 }}>v{c.version}</div>
+              {c.entries.map((e,i) => (
+                <div key={i} style={{ color:GV.fg2, fontSize:11,
+                  marginBottom:3, paddingLeft:10 }}>• {e}</div>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── WELCOME / TERMS MODAL ───────────────────────────────────────────────────
 
 function WelcomeModal({ isFirstTime, onAccept }) {
@@ -1093,10 +1225,11 @@ function WelcomeModal({ isFirstTime, onAccept }) {
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.95)",
-      zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center",
-      padding:"24px 16px", overflowY:"auto", fontFamily:"'Courier Prime',monospace" }}>
+      zIndex:1000, overflowY:"auto", padding:"24px 16px",
+      fontFamily:"'Courier Prime',monospace", boxSizing:"border-box" }}>
       <div style={{ background:GV.bg1, border:`1px solid ${GV.bg2}`,
-        borderRadius:16, width:"100%", maxWidth:460, padding:"28px 24px" }}>
+        borderRadius:16, width:"100%", maxWidth:460, padding:"28px 24px",
+        margin:"0 auto" }}>
 
         <div style={{ textAlign:"center", marginBottom:24 }}>
           <div style={{ display:"flex", alignItems:"baseline", gap:8, justifyContent:"center", marginBottom:8 }}>
@@ -1158,7 +1291,7 @@ function GameSelectScreen({ player, games, gamesLoaded, onSelect, onCreateGame, 
   return (
     <div style={{ background:GV.bg0, minHeight:"100vh", display:"flex", flexDirection:"column",
       alignItems:"center", justifyContent:"center", padding:"24px 16px",
-      fontFamily:"'Courier Prime',monospace" }}>
+      fontFamily:"'Courier Prime',monospace", boxSizing:"border-box", width:"100%" }}>
       <div style={{ marginBottom:32, textAlign:"center" }}>
         <div style={{ display:"flex", alignItems:"baseline", gap:10, justifyContent:"center", marginBottom:8 }}>
           <span style={{ fontSize:34, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
@@ -1399,6 +1532,7 @@ export default function App() {
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
   const [isFirstTimeUser,  setIsFirstTimeUser]  = useState(false);
 
+  const [showAbout,           setShowAbout]            = useState(false);
   const [showProfileSheet,    setShowProfileSheet]     = useState(false);
   const [editingCurrentPlayer,setEditingCurrentPlayer] = useState(false);
 
@@ -1487,12 +1621,18 @@ export default function App() {
     const q = query(collection(db, "submissions"), orderBy("timestamp", "desc"));
     const unsub = onSnapshot(q, snap => {
       const now = Date.now();
-      setSubmissions(snap.docs.map(d => {
-        const data = d.data();
-        if (data.hasImage && (now - new Date(data.timestamp).getTime() > IMAGE_TTL_MS))
-          data.imageData = null;
-        return { ...data, id: d.id };
-      }));
+      const updates = [];
+      const data = snap.docs.map(d => {
+        const sub = { id: d.id, ...d.data() };
+        if (sub.hasImage && sub.imageData &&
+            now - new Date(sub.timestamp).getTime() > IMAGE_TTL_MS) {
+          updates.push(updateDoc(doc(db, "submissions", d.id), { imageData: null }));
+          sub.imageData = null;
+        }
+        return sub;
+      });
+      if (updates.length > 0) Promise.all(updates).catch(console.error);
+      setSubmissions(data);
     });
     return unsub;
   }, []);
@@ -1779,7 +1919,7 @@ export default function App() {
         total: subs.reduce((a,s) => a+s.score, 0),
         count: subs.length,
         best:  subs.length ? Math.max(...subs.map(s => s.score)) : 0,
-        hasStreak: checkStreak(submissions, p.id),
+        hasStreak: getStreakLength(submissions, p.id) >= 3,
       };
     }).sort((a,b) => b.total - a.total);
 
@@ -1863,7 +2003,8 @@ export default function App() {
     <ThemeContext.Provider value={GV}>
       <div style={{ background:GV.bg0, minHeight:"100vh",
         fontFamily:"'Courier Prime',monospace", color:GV.fg,
-        maxWidth:480, margin:"0 auto", paddingBottom:80 }}>
+        maxWidth:480, width:"100%", margin:"0 auto", paddingBottom:80,
+        boxSizing:"border-box" }}>
 
         <Confetti active={showConfetti} />
 
@@ -1878,7 +2019,12 @@ export default function App() {
           <PlayerProfile
             player={profilePlayer} submissions={submissions}
             onClose={() => setProfilePlayer(null)}
-            onEdit={() => { setEditingPlayer(profilePlayer); setProfilePlayer(null); }}
+            onEdit={
+              profilePlayer.id === currentPlayer.id ||
+              (currentPlayer.isAdmin && adminPinUnlocked)
+                ? () => { setEditingPlayer(profilePlayer); setProfilePlayer(null); }
+                : null
+            }
           />
         )}
         {showProfileSheet && (
@@ -1925,16 +2071,24 @@ export default function App() {
         {showJoinGame && (
           <JoinGameModal onJoin={handleJoinGame} onClose={() => setShowJoinGame(false)} inputStyle={S.input} />
         )}
+        {showAbout && (
+          <AboutSheet onClose={() => setShowAbout(false)} />
+        )}
 
         {/* Header */}
         <div style={{ padding:"24px 20px 14px", borderBottom:`1px solid ${GV.bg2}`,
           background:`linear-gradient(180deg,${GV.bg1} 0%,${GV.bg0} 100%)` }}>
           <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between" }}>
-            <div style={{ display:"flex", alignItems:"baseline", gap:10 }}>
-              <span style={{ fontSize:30, fontWeight:900, color:GV.orangeB, letterSpacing:-1 }}>CLOCK</span>
-              <span style={{ fontSize:30, fontWeight:900, color:GV.yellowB, letterSpacing:-1 }}>TZEE</span>
+            <button onClick={() => setShowAbout(true)}
+              style={{ background:"none", border:"none", cursor:"pointer",
+                display:"flex", alignItems:"baseline", gap:10,
+                padding:0, fontFamily:"inherit" }}>
+              <span style={{ fontSize:30, fontWeight:900, color:GV.orangeB,
+                letterSpacing:-1 }}>CLOCK</span>
+              <span style={{ fontSize:30, fontWeight:900, color:GV.yellowB,
+                letterSpacing:-1 }}>TZEE</span>
               <span style={{ fontSize:20, marginLeft:4 }}>🎲</span>
-            </div>
+            </button>
             <button onClick={() => setShowProfileSheet(true)} style={{
               width:40, height:40, borderRadius:"50%",
               background:currentPlayer.color+"33",
